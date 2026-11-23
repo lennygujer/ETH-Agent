@@ -118,4 +118,5 @@ def embed_missing(cfg: Config, store: Store, log=print) -> int:
         vecs = embed.encode(model, texts, kind="passage")
         store.set_embeddings(model, [(cid, v) for (cid, _, _), v in zip(part, vecs)])
         store.commit()
+        log(f"  Embeddings: {min(i + batch, len(todo))} / {len(todo)}")
     return len(todo)

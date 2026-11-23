@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 import numpy as np
 
 _MODELS: dict[str, object] = {}
@@ -37,5 +39,6 @@ def encode(model: str, texts: list[str], kind: str = "passage", batch_size: int 
     m = _load(model)
     pre = _prefix(model, kind)
     vecs = m.encode([pre + t for t in texts], batch_size=batch_size,
-                    normalize_embeddings=True, show_progress_bar=len(texts) > 50)
+                    normalize_embeddings=True,
+                    show_progress_bar=len(texts) > 50 and sys.stderr.isatty())
     return np.asarray(vecs, dtype=np.float32)
