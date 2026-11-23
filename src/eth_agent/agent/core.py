@@ -44,7 +44,8 @@ class Answer:
     def render(self, course_name: str) -> str:
         parts = [self.text.strip()]
         if self.sources:
-            parts.append("---\n**Quellen**\n" + "\n".join(f"- {c.citation(course_name)}" for c in self.sources))
+            parts.append("---\n**Quellen**\n" + "\n".join(
+                f"[{i}] {c.citation(course_name)}" for i, c in enumerate(self.sources, 1)))
         footer = [f"Geprüft: {self.check.badge}"]
         if self.check.status == "pass":
             footer[0] += " (Prüfcode vom selben Modell)"
@@ -65,10 +66,8 @@ def _fill(template: str, **values: str) -> str:
     return template
 
 
-def _format_chunk(c: ChunkRow, course_name: str, label: str | None = None) -> str:
-    head = c.citation(course_name)
-    if label:
-        head = f"{label} {head}"
+def _format_chunk(n: int, c: ChunkRow, course_name: str, label: str | None = None) -> str:
+    head = f"[{n}] " + (f"{label} " if label else "") + c.citation(course_name)
     if c.section:
         head += f"\n({c.section})"
     return f"### {head}\n{c.text.strip()}"
@@ -82,7 +81,8 @@ class Agent:
         self.store = store or Store(cfg.db_path)
         self.usage = usage or UsageLog(cfg.data_dir / "usage.sqlite")
         self.providers: dict[str, Provider] = providers or {
-            "codex": CodexProvider(), "claude": ClaudeProvider()}
+            "codex": CodexProvider(model=cfg.models.codex_model),
+            "claude": ClaudeProvider(model=cfg.models.claude_model)}
         self.encode = encode
         self.embedding_model = embedding_model
 
@@ -150,7 +150,7 @@ class Agent:
         if history:
             lines = [f"**{'Student' if t.role == 'user' else 'Assistant'}:** {t.text[:1500]}" for t in history[-6:]]
             hist = "## Conversation so far (for context)\n\n" + "\n\n".join(lines)
-        context = "\n\n".join(_format_chunk(c, course.name, lab) for c, lab in picked) \
+        context = "\n\n".join(_format_chunk(i, c, course.name, lab) for i, (c, lab) in enumerate(picked, 1)) \
             or "(no matching course material found)"
         return _fill(_template("answer.md"), course_name=course.name,
                      output_language_name=LANG_NAMES.get(course.output_language, course.output_language),
@@ -160,8 +160,12 @@ class Agent:
     # ------------------------------------------------------------------ Ablauf
     def _call(self, name: str, prompt: str, r: Route, status: list[str]) -> LLMResult:
         p = self.providers[name]
-        status.append(f"{name} arbeitet …")
-        res = p.complete(prompt)
+        effort = None
+        if name == "codex":
+            effort = (self.cfg.models.codex_effort_hard if r.rule in {"R4", "R6"}
+                      else self.cfg.models.codex_effort_default)
+        status.append(f"{name} arbeitet …" + (f" (Denkaufwand: {effort})" if effort else ""))
+        res = p.complete(prompt, timeout=self.cfg.models.timeout_s, effort=effort)
         self.usage.record(res, skill=r.skill or "answer", rule=r.rule, prompt_tokens_est=est_tokens(prompt))
         return res
 

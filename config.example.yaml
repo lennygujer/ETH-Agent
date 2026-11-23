@@ -46,3 +46,12 @@ retrieval:
   embedding_model: "BAAI/bge-m3"   # Fallback bei wenig RAM: "intfloat/multilingual-e5-small"
   semantic_weight: 0.7
   keyword_weight: 0.3
+
+models:
+  codex_model:                 # leer = Standardmodell von Codex
+  # Denkaufwand von Codex: none | minimal | low | medium | high | xhigh
+  # Mehr Aufwand = gründlicher, aber langsamer und mehr Verbrauch am Abo-Kontingent.
+  codex_effort_hard: medium    # Aufgaben, Herleitungen, Code
+  codex_effort_default: low    # Erklärungen und allgemeine Fragen
+  claude_model:                # leer = Standardmodell von Claude Code
+  timeout_s: 600

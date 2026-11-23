@@ -40,7 +40,7 @@ class Provider(Protocol):
     name: str
 
     def available(self) -> bool: ...
-    def complete(self, prompt: str, timeout: int = 300) -> LLMResult: ...
+    def complete(self, prompt: str, timeout: int = 300, effort: str | None = None) -> LLMResult: ...
 
 
 def _run(cmd: list[str], timeout: int, cwd: str, stdin: str | None = None) -> subprocess.CompletedProcess:
@@ -61,7 +61,7 @@ class CodexProvider:
     def available(self) -> bool:
         return shutil.which(self.binary) is not None
 
-    def complete(self, prompt: str, timeout: int = 300) -> LLMResult:
+    def complete(self, prompt: str, timeout: int = 300, effort: str | None = None) -> LLMResult:
         t0 = time.monotonic()
         with tempfile.TemporaryDirectory(prefix="eth-agent-codex-") as tmp:
             out = Path(tmp) / "answer.md"
@@ -69,6 +69,8 @@ class CodexProvider:
                    "--output-last-message", str(out)]
             if self.model:
                 cmd += ["-m", self.model]
+            if effort:
+                cmd += ["-c", f'model_reasoning_effort="{effort}"']
             cmd += self.extra_args + [prompt]
             try:
                 p = _run(cmd, timeout, cwd=tmp)
@@ -108,7 +110,7 @@ class ClaudeProvider:
         local = Path("~/.local/bin/claude").expanduser()
         return str(local) if local.exists() else self.binary
 
-    def complete(self, prompt: str, timeout: int = 300) -> LLMResult:
+    def complete(self, prompt: str, timeout: int = 300, effort: str | None = None) -> LLMResult:
         t0 = time.monotonic()
         cmd = [self._bin(), "-p", "--output-format", "json"]
         if self.model:
@@ -153,12 +155,14 @@ class FakeProvider:
         self.fail = fail
         self.rate_limited = rate_limited
         self.prompts: list[str] = []
+        self.efforts: list[str | None] = []
 
     def available(self) -> bool:
         return True
 
-    def complete(self, prompt: str, timeout: int = 300) -> LLMResult:
+    def complete(self, prompt: str, timeout: int = 300, effort: str | None = None) -> LLMResult:
         self.prompts.append(prompt)
+        self.efforts.append(effort)
         if self.fail:
             return LLMResult(self.name, "", False, 0.0, rate_limited=self.rate_limited, error="fake failure")
         text = self.reply(prompt) if callable(self.reply) else str(self.reply)

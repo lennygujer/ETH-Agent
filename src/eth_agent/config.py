@@ -34,12 +34,22 @@ class RetrievalConfig:
 
 
 @dataclass
+class ModelsConfig:
+    codex_model: str | None = None          # None = Codex-Standard
+    codex_effort_hard: str = "medium"       # Aufgaben, Herleitungen, Code (R4/R6)
+    codex_effort_default: str = "low"       # Erklärungen, Fragen (R8)
+    claude_model: str | None = None
+    timeout_s: int = 600
+
+
+@dataclass
 class Config:
     material_root: Path
     data_dir: Path
     courses: dict[str, Course]
     folder_doc_types: dict[str, str]
     retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
+    models: ModelsConfig = field(default_factory=ModelsConfig)
 
     @property
     def db_path(self) -> Path:
@@ -90,4 +100,5 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
         courses=courses,
         folder_doc_types={k.lower(): v for k, v in (raw.get("folder_doc_types") or {}).items()},
         retrieval=retrieval,
+        models=ModelsConfig(**(raw.get("models") or {})),
     )

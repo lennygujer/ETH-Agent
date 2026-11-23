@@ -63,11 +63,14 @@ def test_handle_with_reference_and_check(course_dir):  # noqa: F811
     assert "```" not in ans.text
     prompt = agent.providers["codex"].prompts[-1]
     assert "## Question (verbatim)\n\nLöse Prüfung 2024 Aufgabe 2" in prompt
-    assert "### AUFGABE [Physik II – PhysII_Exam_2024.pdf, Aufgabe 2, S. 3]" in prompt
-    assert "### MUSTERLÖSUNG [Physik II – PhysII_Exam_2024_solns.pdf, Aufgabe 2" in prompt
+    assert "### [1] AUFGABE [Physik II – PhysII_Exam_2024.pdf, Aufgabe 2, S. 3]" in prompt
+    assert "### [2] MUSTERLÖSUNG [Physik II – PhysII_Exam_2024_solns.pdf, Aufgabe 2" in prompt
+    assert agent.providers["codex"].efforts[-1] == "medium"     # Aufgabe -> mehr Denkaufwand
     assert any("Musterlösung gefunden" in s for s in status)
     rendered = ans.render("Physik II")
-    assert "Geprüft: Tool ✓" in rendered and "**Quellen**" in rendered
+    assert "Geprüft: Tool ✓" in rendered and "**Quellen**\n[1] [Physik II – PhysII_Exam_2024.pdf" in rendered
+    agent.handle("Was ist Spin?")
+    assert agent.providers["codex"].efforts[-1] == "low"
     assert agent.usage.summary()[0][0] == "codex"
 
 
