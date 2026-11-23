@@ -13,14 +13,17 @@ $Dest    = "server:eth-agent/material"
 $Trash   = "server:eth-agent/material-trash/" + (Get-Date -Format "yyyy-MM-dd")
 $Log     = "$env:LOCALAPPDATA\eth-agent-sync.log"
 
-$Excludes = @(
-  ".*/**", "**/.venv/**", "**/venv/**", "**/node_modules/**", "**/__pycache__/**", "**/.git/**",
-  "Code-Demo-*/**", "*.mp4", "*.mov", "*.mkv", "*.avi", "*.zip", "*.7z", "*.rar", "*.exe", "*.msi",
-  "*.iso", "*.dmg", "~$*", "desktop.ini", "Thumbs.db"
+# Reihenfolge zählt: zuerst ausschliessen, dann nur Dateitypen zulassen, die der Agent lesen kann.
+$Filters = @(
+  "- .*", "- .*/**", "- **/.venv/**", "- **/venv/**", "- **/node_modules/**", "- **/__pycache__/**",
+  "- **/.git/**", "- Code-Demo-*/**", "- ~$*",
+  "+ *.pdf", "+ *.docx", "+ *.pptx", "+ *.md", "+ *.txt", "+ *.tex", "+ *.ipynb",
+  "+ *.py", "+ *.m", "+ *.java", "+ *.c", "+ *.cpp", "+ *.h", "+ *.v", "+ *.sv", "+ *.vhd",
+  "- **"
 )
-$ExcludeArgs = $Excludes | ForEach-Object { "--exclude", $_ }
+$FilterArgs = $Filters | ForEach-Object { "--filter", $_ }
 
-$RcloneArgs = @("sync", $Source, $Dest) + $ExcludeArgs + @(
+$RcloneArgs = @("sync", $Source, $Dest) + $FilterArgs + @(
   "--max-size", "200M", "--backup-dir", $Trash, "--transfers", "4", "--stats-one-line", "--stats", "30s"
 )
 if ($DryRun) {
