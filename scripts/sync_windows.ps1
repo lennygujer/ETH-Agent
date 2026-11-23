@@ -24,11 +24,11 @@ $RcloneArgs = @("sync", $Source, $Dest) + $ExcludeArgs + @(
   "--max-size", "200M", "--backup-dir", $Trash, "--transfers", "4", "--stats-one-line", "--stats", "30s"
 )
 if ($DryRun) {
-  & $Rclone @Args --dry-run --log-level NOTICE
+  & $Rclone @RcloneArgs --dry-run --log-level NOTICE
   Write-Host "`nTrockenlauf fertig – nichts wurde geändert."
   exit 0
 }
-& $Rclone @Args --log-file $Log --log-level NOTICE
+& $Rclone @RcloneArgs --log-file $Log --log-level NOTICE
 if ($LASTEXITCODE -ne 0) { Write-Host "rclone-Fehler, siehe $Log"; exit $LASTEXITCODE }
 
 # Index auf dem Server aktualisieren (nur neue/geänderte Dateien, läuft im Hintergrund)
