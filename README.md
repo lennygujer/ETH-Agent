@@ -59,6 +59,23 @@ aufgeschriebener Gedankengang fliessen ein. Ist die Ursache eines Fehlers unklar
 Belege werden nur angehängt, nie überschrieben (`data/learner.sqlite`); der Status wird daraus berechnet
 (neuere Belege zählen mehr, eine Fehlvorstellung gilt erst nach zwei richtigen Antworten als behoben).
 
+## Diagnose
+
+`/diagnose` misst gezielt, was du kannst – nach dem Prober von LearnHarness: kurze Fragen, die verschiedene
+Denkmodelle auseinanderhalten (Multiple Choice mit plausiblen Fehlvorstellungen als Optionen oder ein Satz),
+beginnend auf Prüfungsniveau und je nach Antwort enger. Ungeprüfte und wacklige Themen der Lernkarte kommen
+zuerst. Deine Begründung zählt mehr als die gewählte Option; sicher und falsch gilt als Fehlvorstellung,
+«weiss nicht» als ehrliche Lücke. Pro Antwort ein Modellaufruf (Auswertung + nächste Frage), die Lösung jeder
+Frage bleibt bis zur Auswertung verborgen.
+
+- `/diagnose` – ganzes Fach, bis zu 8 Fragen
+- `/diagnose tunneling`, `/diagnose wasserstoff 5` – nur ein Thema, eigene Anzahl (3–15)
+- Antwort: Buchstabe oder eigene Worte, kurz warum, optional `Sicherheit: 70%`
+- `/weiter` überspringt eine Frage (ohne Eintrag), `/stop` beendet mit Fazit ohne weiteren Modellaufruf
+
+Am Ende: Fazit pro Thema (worauf du aufbauen kannst, wo es bricht, Fehlvorstellungen, was als Nächstes) und die
+aktualisierten Knoten der Lernkarte.
+
 ## OneDrive-Sync
 
 Siehe `docs/sync.md`: entweder holt der Server den ETH-Ordner direkt aus OneDrive (rclone, alle 3 h),

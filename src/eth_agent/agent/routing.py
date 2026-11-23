@@ -8,7 +8,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-SKILLS = {"repeat", "check", "practice", "diagnose", "learn", "rewrite", "help", "loesung", "lösung", "lernkarte", "mindmap", "karte", "weiter"}
+SKILLS = {"repeat", "check", "practice", "diagnose", "learn", "rewrite", "help", "loesung", "lösung", "lernkarte", "mindmap", "karte", "weiter",
+          "stop", "abbrechen"}
 _NAMED = re.compile(r"^\s*@(codex|gpt|chatgpt|claude)\b[:,]?\s*", re.I)
 _SKILL = re.compile(r"^\s*[/!]([a-zäöü]+)\b[ \t]*", re.I)
 _HARD = re.compile(

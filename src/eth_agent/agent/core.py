@@ -23,6 +23,8 @@ PROMPTS = REPO_ROOT / "prompts"
 _COURSE_PREFIX = re.compile(r"^\s*[/!]([\wäöüÄÖÜ-]+)\b[ \t]*")
 
 
+_STOP = re.compile(r"^[/!](stop|abbrechen|ende)\b", re.I)
+_SKIP = re.compile(r"^[/!](weiter|skip)\b", re.I)
 _FULL_FLAG = re.compile(r"\s*--\s*(l(ö|oe)sung|solution|full)\b", re.I)
 _FULL_PREFIX = re.compile(r"^\s*[/!]l(ö|oe)sung\b\s*", re.I)
 _FULL_WORDS = re.compile(r"\b(ganze|vollst(ä|ae)ndige|komplette|ganzen|vollst(ä|ae)ndigen|kompletten)\s+"
@@ -306,6 +308,24 @@ class Agent:
         history = history or []
         status = _Status(on_status)
 
+        # Laufende Diagnose? (letzte Agenten-Antwort enthielt "Diagnose #d · Frage n")
+        from ..skills import diagnose as dg
+        pend = dg.pending_diagnosis(history)
+        if pend is not None and message.strip():
+            did, qn = pend
+            low = message.lstrip()
+            text = cid = None
+            if _STOP.match(low):
+                text, cid = dg.stop(self, did)
+            elif _SKIP.match(low):
+                text, cid = dg.answer(self, did, qn, "", status.append, skip=True)
+            elif not low.startswith(("/", "!", "@")):
+                text, cid = dg.answer(self, did, qn, message, status.append)
+            if text is not None:
+                holder["course"] = self.cfg.courses.get(cid) if cid else None
+                return Answer(text, Route("DIAGNOSE", "skill", message, skill="diagnose"), status=list(status),
+                              prerendered=True)
+
         # Antwort auf eine Rückfrage? (letzte Agenten-Antwort enthielt "Rückfrage #n", keine neue /Anweisung)
         from ..skills.probe import pending_probe, run_probe_answer
         pid = pending_probe(history)
@@ -334,6 +354,17 @@ class Agent:
                 from ..skills.check import ensure_skeleton
                 ensure_skeleton(self, course.id)
                 return Answer(render_map(self.learner, course.id, course.name, r.question), r, prerendered=True)
+            if r.skill == "diagnose":
+                if not course.id:
+                    return Answer("Für `/diagnose` bitte zuerst ein Fach wählen, z. B. `/physik`. Alle Fächer: "
+                                  "`/kurse`.", r)
+                text = dg.start(self, course, r.question, status.append)
+                return Answer(text, r, status=list(status), prerendered=True)
+            if r.skill in {"stop", "abbrechen"}:
+                did = self.learner.open_diagnosis_for(course.id) if course.id else None
+                if did is None:
+                    return Answer("Gerade läuft keine Diagnose.", r, prerendered=True)
+                return Answer(dg.stop(self, did)[0], r, prerendered=True)
             if r.skill == "weiter":
                 return Answer("Rückfrage übersprungen.", r, prerendered=True)
             if r.skill == "check":
@@ -402,6 +433,10 @@ HELP = """**ETH-Agent – Befehle**
 - **Lernkarte:** `/lernkarte` zeigt pro Fach, welche Themen sitzen, wackeln oder fehlen (wird mit jedem `/check`
   genauer). `/lernkarte voll` oder `/lernkarte <thema>` für Details. Stellt der Agent eine **Rückfrage** zu
   deinem Gedankengang, antworte einfach in der nächsten Nachricht (`/weiter` überspringt).
-- Tipp für `/check`: Gedankengang mitschreiben und `Sicherheit: 70%` angeben – beides macht die Karte genauer.
-- Geplant: `/practice`, `/diagnose`, `/learn`.
+- **Diagnose:** `/diagnose` stellt bis zu 8 kurze, gezielte Fragen über das Fach (`/diagnose tunneling` nur zu
+  einem Thema, `/diagnose 5` mit 5 Fragen). Antworte mit Buchstabe oder eigenen Worten plus kurzem Warum;
+  «weiss nicht» ist erlaubt und hilfreich. `/weiter` überspringt eine Frage, `/stop` beendet mit Fazit.
+- Tipp für `/check` und `/diagnose`: Gedankengang mitschreiben und `Sicherheit: 70%` angeben – beides macht die
+  Karte genauer.
+- Geplant: `/practice`, `/learn`.
 """

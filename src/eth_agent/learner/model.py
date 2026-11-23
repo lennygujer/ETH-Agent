@@ -8,6 +8,7 @@ Nach dem Vorbild von LearnHarness getrennt:
 
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 import unicodedata
@@ -34,7 +35,7 @@ CREATE TABLE IF NOT EXISTS evidence (
     course TEXT NOT NULL,
     node_id TEXT NOT NULL,
     ts TEXT NOT NULL,
-    kind TEXT NOT NULL,            -- check | probe | self
+    kind TEXT NOT NULL,            -- check | probe | diagnose | self
     outcome TEXT NOT NULL,         -- correct | partial | wrong | misconception | slip
     confidence REAL,               -- eigene Sicherheit 0..1, falls angegeben
     detail TEXT,                   -- was genau (in Worten des Bewerters / deinen Worten)
@@ -52,6 +53,35 @@ CREATE TABLE IF NOT EXISTS probes (
     status TEXT NOT NULL DEFAULT 'open',
     answer TEXT
 );
+CREATE TABLE IF NOT EXISTS diagnoses (
+    id INTEGER PRIMARY KEY,
+    course TEXT NOT NULL,
+    scope TEXT,                    -- Thema oder leer (ganzes Fach)
+    ts TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',   -- open | done | stopped | abandoned
+    max_q INTEGER NOT NULL,
+    focus TEXT,                    -- Stränge (id | Titel | Status) zu Beginn
+    context TEXT,                  -- JSON: Kursmaterial + Prüfungsauszüge (einmal gesucht)
+    summary TEXT
+);
+CREATE TABLE IF NOT EXISTS diag_items (
+    id INTEGER PRIMARY KEY,
+    diag_id INTEGER NOT NULL,
+    n INTEGER NOT NULL,
+    ts TEXT NOT NULL,
+    node_ids TEXT,
+    question TEXT NOT NULL,
+    format TEXT,
+    options TEXT,                  -- JSON-Liste
+    answer_key TEXT,               -- nie an dich ausgegeben
+    discriminates TEXT,
+    answer TEXT,
+    confidence REAL,
+    outcome TEXT,
+    feedback TEXT,
+    touched TEXT                   -- eingetragene Knoten, kommagetrennt
+);
+CREATE INDEX IF NOT EXISTS diag_items_diag ON diag_items(diag_id);
 """
 
 OUTCOMES = {"correct", "partial", "wrong", "misconception", "slip"}
@@ -276,6 +306,71 @@ class LearnerStore:
     def close_probe(self, probe_id: int, answer: str) -> None:
         with self.lock:
             self.db.execute("UPDATE probes SET status='answered', answer=? WHERE id=?", (answer, probe_id))
+            self.db.commit()
+
+    # ------------------------------------------------------------------ Diagnosen
+    def open_diagnosis(self, course: str, scope: str | None, max_q: int, focus: str, context: str) -> int:
+        """Neue Diagnose; eine noch offene im selben Fach gilt als abgebrochen."""
+        with self.lock:
+            self.db.execute("UPDATE diagnoses SET status='abandoned' WHERE course=? AND status='open'", (course,))
+            cur = self.db.execute("INSERT INTO diagnoses (course, scope, ts, max_q, focus, context) "
+                                  "VALUES (?,?,?,?,?,?)", (course, scope or None, now(), max_q, focus, context))
+            self.db.commit()
+            return cur.lastrowid
+
+    def get_diagnosis(self, diag_id: int) -> dict | None:
+        r = self.db.execute("SELECT id, course, scope, status, max_q, focus, context, summary FROM diagnoses "
+                            "WHERE id=?", (diag_id,)).fetchone()
+        if not r:
+            return None
+        return dict(zip(("id", "course", "scope", "status", "max_q", "focus", "context", "summary"), r))
+
+    def open_diagnosis_for(self, course: str) -> int | None:
+        r = self.db.execute("SELECT id FROM diagnoses WHERE course=? AND status='open' ORDER BY id DESC LIMIT 1",
+                            (course,)).fetchone()
+        return r[0] if r else None
+
+    def diag_items(self, diag_id: int) -> list[dict]:
+        cols = ("id", "n", "node_ids", "question", "format", "options", "answer_key", "discriminates",
+                "answer", "confidence", "outcome", "feedback", "touched")
+        out = []
+        for r in self.db.execute(f"SELECT {', '.join(cols)} FROM diag_items WHERE diag_id=? ORDER BY n",
+                                 (diag_id,)):
+            d = dict(zip(cols, r))
+            d["node_ids"] = [x for x in (d["node_ids"] or "").split(",") if x]
+            d["touched"] = [x for x in (d["touched"] or "").split(",") if x]
+            try:
+                d["options"] = json.loads(d["options"] or "[]")
+            except json.JSONDecodeError:
+                d["options"] = []
+            out.append(d)
+        return out
+
+    def add_diag_item(self, diag_id: int, n: int, *, question: str, node_ids: list[str], fmt: str,
+                      options: list[str], answer_key: str, discriminates: str) -> int:
+        with self.lock:
+            cur = self.db.execute(
+                "INSERT INTO diag_items (diag_id, n, ts, node_ids, question, format, options, answer_key, "
+                "discriminates) VALUES (?,?,?,?,?,?,?,?,?)",
+                (diag_id, n, now(), ",".join(node_ids), question, fmt, json.dumps(options, ensure_ascii=False),
+                 answer_key, discriminates))
+            self.db.commit()
+            return cur.lastrowid
+
+    def answer_diag_item(self, item_id: int, answer: str | None, confidence: float | None) -> None:
+        with self.lock:
+            self.db.execute("UPDATE diag_items SET answer=?, confidence=? WHERE id=?", (answer, confidence, item_id))
+            self.db.commit()
+
+    def evaluate_diag_item(self, item_id: int, outcome: str | None, feedback: str, touched: list[str]) -> None:
+        with self.lock:
+            self.db.execute("UPDATE diag_items SET outcome=?, feedback=?, touched=? WHERE id=?",
+                            (outcome, feedback, ",".join(touched), item_id))
+            self.db.commit()
+
+    def finish_diagnosis(self, diag_id: int, status: str, summary: str | None) -> None:
+        with self.lock:
+            self.db.execute("UPDATE diagnoses SET status=?, summary=? WHERE id=?", (status, summary, diag_id))
             self.db.commit()
 
     # ------------------------------------------------------------------ für Prompts
