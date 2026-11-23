@@ -24,7 +24,7 @@ $Filters = @(
 $FilterArgs = $Filters | ForEach-Object { "--filter", $_ }
 
 $RcloneArgs = @("sync", $Source, $Dest) + $FilterArgs + @(
-  "--max-size", "200M", "--backup-dir", $Trash, "--transfers", "4", "--stats-one-line", "--stats", "30s"
+  "--copy-links", "--max-size", "200M", "--backup-dir", $Trash, "--transfers", "4", "--stats-one-line", "--stats", "30s"
 )
 if ($DryRun) {
   & $Rclone @RcloneArgs --dry-run --log-level NOTICE
