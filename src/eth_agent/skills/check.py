@@ -100,7 +100,9 @@ class CheckReport:
             if g.get("reference_disagreement_note"):
                 out.append(f"> {g['reference_disagreement_note']}")
         pts = f"{_num(g.get('points_awarded'))} / {_num(g.get('points_max'))}"
-        out.append(f"**Punkte (geschätzt): {pts}** · Bewertung: {VERDICT_DE.get(g.get('verdict'), g.get('verdict', '?'))}")
+        scope = " (bearbeitete Teile)" if g.get("not_attempted") else ""
+        out.append(f"**Punkte{scope}, geschätzt: {pts}** · Bewertung: "
+                   f"{VERDICT_DE.get(g.get('verdict'), g.get('verdict', '?'))}")
         if g.get("correct_parts"):
             out.append("**Richtig:**\n" + "\n".join(f"- {x}" for x in g["correct_parts"]))
         fe = g.get("first_error")
@@ -113,6 +115,8 @@ class CheckReport:
             out.append(f"**Hinweis:** {g['hint']}")
         if g.get("feedback_markdown"):
             out.append(g["feedback_markdown"])
+        if g.get("not_attempted"):
+            out.append("*Nicht bearbeitet:* " + ", ".join(map(str, g["not_attempted"])))
         if self.trust != "uncertain" and g.get("reference_disagreement_note"):
             out.append(f"*Anmerkung zur Referenz:* {g['reference_disagreement_note']}")
         if self.reveal and not self.reveal_blocked:

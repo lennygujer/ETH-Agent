@@ -68,7 +68,7 @@ def test_check_with_official_solution(course_dir):  # noqa: F811
     p = claude.prompts[-1]
     assert "official solution (Musterlösung)" in p and "3a/2" in p and "N = 1/pi" in p
     assert "Point value of this problem in the exam: 12 points." in p
-    assert "**Punkte (geschätzt): 4 / 12**" in out and "Vorzeichen" in out
+    assert "**Punkte, geschätzt: 4 / 12**" in out and "Vorzeichen" in out
     assert "Referenz: Musterlösung" in out and "Dein Endergebnis: Tool ✗" in out
     assert "Lösung anzeigen" in out and "### Lösung" not in out
     log = (cfg.data_dir / "profile" / "errors.jsonl").read_text().strip().splitlines()
@@ -123,3 +123,14 @@ def test_check_with_image_uses_codex(course_dir, tmp_path):  # noqa: F811
     img.write_bytes(b"\xff\xd8fake")
     out = agent.handle("/check Prüfung 2024 Aufgabe 2", images=[str(img)]).render("Physik II")
     assert "Bewertet von: codex" in out and claude.prompts == []
+
+
+def test_partial_attempt_rendering(course_dir):  # noqa: F811
+    cfg = make_cfg(course_dir)
+    claude = FakeProvider("claude", reply=grade_json(reference_agreement="official", points_max=3,
+                                                     not_attempted=["b)", "c)"]))
+    agent = _agent(cfg, codex=FakeProvider("codex"), claude=claude)
+    out = agent.handle("/check Prüfung 2024 Aufgabe 2\na) r = a").render("Physik II")
+    assert "**Punkte (bearbeitete Teile), geschätzt: 4 / 3**" in out
+    assert "*Nicht bearbeitet:* b), c)" in out
+    assert "Grade ONLY the sub-tasks the student actually attempted" in claude.prompts[-1]
