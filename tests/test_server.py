@@ -64,7 +64,7 @@ def test_chat_stream_with_status(course_dir):  # noqa: F811
             "model": "eth-agent", "stream": True,
             "messages": [{"role": "user", "content": "Berechne die Johnson noise"}]}) as r:
         text = _stream_text(r)
-    assert text.startswith("<think>\n· Suche im Kursmaterial")
+    assert text.startswith("<think>\n· Fach: Physik II") and "· Suche im Kursmaterial" in text
     assert "</think>\n\nAntwort mit $x^2$" in text
 
 

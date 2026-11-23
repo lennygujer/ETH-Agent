@@ -1,4 +1,4 @@
-"""Indexierung: Kursordner durchlaufen, geänderte PDFs neu einlesen, gelöschte entfernen."""
+"""Indexierung: Kursordner durchlaufen, geänderte Dateien neu einlesen, gelöschte entfernen."""
 
 from __future__ import annotations
 
@@ -10,9 +10,7 @@ from ..config import Config, Course
 from ..retrieval.store import Store
 from .chunking import chunk_document
 from .doctypes import classify, cover_metadata, pair_key
-from .pdf import read_pdf
-
-SUPPORTED = {".pdf"}
+from .readers import SUPPORTED, read_document, too_large
 
 
 @dataclass
@@ -46,7 +44,7 @@ def index_course(cfg: Config, store: Store, course: Course, *, force: bool = Fal
     known = store.file_hashes(course.id)
     seen: set[str] = set()
     files = sorted(p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in SUPPORTED
-                   and not any(part.startswith(".") for part in p.relative_to(root).parts))
+                   and not any(cfg.is_ignored(part) for part in p.relative_to(root).parts))
     for path in files:
         rel = path.relative_to(root).as_posix()
         seen.add(rel)
@@ -60,13 +58,16 @@ def index_course(cfg: Config, store: Store, course: Course, *, force: bool = Fal
                                status="placeholder", empty_pages=[], pair_key=pair_key(rel), meta={})
             continue
 
+        if too_large(path):
+            seen.discard(rel)
+            continue
         digest = sha256(path)
         if not force and known.get(rel) == digest:
             rep.unchanged += 1
             continue
         try:
-            doc = read_pdf(path)
-        except Exception as e:  # defekte PDFs nicht den ganzen Lauf abbrechen lassen
+            doc = read_document(path)
+        except Exception as e:  # defekte Dateien nicht den ganzen Lauf abbrechen lassen
             rep.errors.append((rel, str(e)))
             store.add_file(course.id, rel, doc_type, sha256=digest, size=size, n_pages=0,
                            status="error", empty_pages=[], pair_key=pair_key(rel), meta={}, error=str(e))

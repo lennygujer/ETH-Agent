@@ -1,0 +1,10 @@
+[Unit]
+Description=ETH-Agent: OneDrive alle 3 Stunden synchronisieren
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=3h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

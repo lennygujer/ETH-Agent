@@ -1,13 +1,34 @@
 # Kopieren nach config.yaml und Pfade anpassen.
 
-# Wurzel des gespiegelten OneDrive-Ordners. Darunter liegt pro Kurs ein Ordner.
+# Wurzel des gespiegelten OneDrive-Ordners "ETH". Darunter <Semester>/<Fach>/ (HS26/Physik 2/…)
+# oder direkt <Fach>/. Die Fächer werden automatisch erkannt (discover_courses).
 material_root: ~/eth-agent/material
+discover_courses: true
+
+# Ordner/Dateien, die nie als Fach oder Material gelten (Muster wie in der Shell)
+ignore: [".*", "__pycache__", "node_modules", "venv", ".venv", "Code-Demo-*"]
+
+# Ohne /fach im Chat: über alle Fächer suchen (leer) oder ein festes Fach (Kurs-ID)
+default_course:
+
+# Einstellungen für alle automatisch erkannten Fächer
+course_defaults:
+  output_language: de
+  serien_mode: tutor
+
+# Eigene Kürzel zusätzlich zu den automatischen (/physik, /analysis3, /dm, …)
+course_aliases:
+  sst: "System und Signaltheorie"
+  sigsys: "System und Signaltheorie"
+  ec: "Electronic Circuits"
+  info: "Informatik 2"
 
 # Index, Manifest, Cache.
 data_dir: ~/eth-agent/data
 
+# Optional: Fächer mit eigenen Einstellungen. Alle anderen werden automatisch erkannt.
 courses:
-  # Schlüssel = Kurs-ID (kurz, ohne Leerzeichen); folder = Ordnername unter material_root
+  # Schlüssel = Kurs-ID (kurz, ohne Leerzeichen); folder = Ordner unter material_root
   physik2:
     folder: "Physik 2"
     name: "Physik II (Quantenmechanik)"

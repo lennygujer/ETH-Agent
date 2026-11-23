@@ -43,11 +43,9 @@ _TASK_MARKERS = ("### Task:", "Generate a concise", "Generate 1-3 broad tags", "
                  "autocomplete")
 
 
-def model_ids(cfg: Config) -> dict[str, str]:
-    ids = {"eth-agent": next(iter(cfg.courses))}
-    if len(cfg.courses) > 1:
-        ids.update({f"eth-agent-{cid}": cid for cid in cfg.courses})
-    return ids
+def model_ids(cfg: Config) -> dict[str, str | None]:
+    # Ein Modell; das Fach wählt man im Chat mit /physik, /analysis, ... (siehe /kurse)
+    return {"eth-agent": None}
 
 
 def _text_and_images(content: Any, tmpdir: Path) -> tuple[str, list[str]]:
@@ -131,12 +129,12 @@ def create_app(cfg: Config, agent: Agent, api_key: str | None) -> FastAPI:
     def models() -> dict:
         return {"object": "list", "data": [
             {"id": mid, "object": "model", "created": 0, "owned_by": "eth-agent",
-             "name": "ETH-Agent " + cfg.courses[cid].name} for mid, cid in ids.items()]}
+             "name": "ETH-Agent"} for mid in ids]}
 
     @app.post("/v1/chat/completions", dependencies=[Depends(auth)])
     def chat(body: dict):
         model = body.get("model") or "eth-agent"
-        course_id = ids.get(model, next(iter(cfg.courses)))
+        course_id = ids.get(model)
         messages = body.get("messages") or []
         stream = bool(body.get("stream"))
         tmp = Path(tempfile.mkdtemp(prefix="eth-agent-req-"))
@@ -164,7 +162,7 @@ def create_app(cfg: Config, agent: Agent, api_key: str | None) -> FastAPI:
                     ans = agent.handle(last_text, course_id=course_id, history=history, images=last_images)
             finally:
                 _cleanup(tmp)
-            return _respond(cid, model, ans.render(cfg.courses[course_id].name), False, status=ans.status)
+            return _respond(cid, model, ans.render(), False, status=ans.status)
 
         q: queue.Queue = queue.Queue()
 
@@ -178,7 +176,7 @@ def create_app(cfg: Config, agent: Agent, api_key: str | None) -> FastAPI:
                                        on_status=lambda s: q.put(("status", s)))
                 finally:
                     busy.release()
-                q.put(("answer", ans.render(cfg.courses[course_id].name)))
+                q.put(("answer", ans.render()))
             except Exception as e:  # Fehler als Antwort anzeigen statt Verbindung abzubrechen
                 q.put(("answer", f"Interner Fehler: {type(e).__name__}: {e}"))
             finally:

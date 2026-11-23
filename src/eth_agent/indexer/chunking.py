@@ -157,8 +157,12 @@ def chunk_prose(doc: PdfDoc, target: int, overlap: int) -> list[Chunk]:
     return chunks
 
 
+def _has_numbered_headings(doc: PdfDoc) -> bool:
+    return any(l.heading_no for p in doc.pages for l in p.lines)
+
+
 def chunk_document(doc: PdfDoc, doc_type: str, target: int = 600, overlap: int = 80) -> list[Chunk]:
-    if doc_type in PROBLEM_TYPES:
+    if doc_type in PROBLEM_TYPES and _has_numbered_headings(doc):
         return chunk_problems(doc)
     if doc_type == "formelsammlung":
         return chunk_prose(doc, target=300, overlap=0)

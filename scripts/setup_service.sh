@@ -32,9 +32,11 @@ if ss -ltn "sport = :$PORT" | grep -q LISTEN; then
 fi
 
 mkdir -p ~/.config/systemd/user
-cp deploy/eth-agent.service ~/.config/systemd/user/eth-agent.service
+cp deploy/eth-agent.service deploy/eth-agent-index.service deploy/eth-agent-index.timer ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now eth-agent.service
+systemctl --user restart eth-agent.service
+systemctl --user enable --now eth-agent-index.timer   # nächtliche Indexierung 03:30
 # Dienst auch ohne aktive Anmeldung laufen lassen
 sudo loginctl enable-linger "$USER" || echo "! linger nicht gesetzt – Dienst läuft nur, solange du angemeldet bist."
 
@@ -46,3 +48,4 @@ echo "API-Schlüssel für Open WebUI:"
 grep '^ETH_AGENT_API_KEY=' .env | cut -d= -f2-
 echo
 echo "Logs: journalctl --user -u eth-agent -f"
+echo "Indexierung sofort starten: systemctl --user start eth-agent-index  (Logs: journalctl --user -u eth-agent-index -f)"

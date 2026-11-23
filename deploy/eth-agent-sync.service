@@ -1,0 +1,13 @@
+[Unit]
+Description=ETH-Agent: OneDrive -> Server synchronisieren, danach indexieren
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/eth-agent/app
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Nice=15
+IOSchedulingClass=idle
+ExecStart=%h/eth-agent/app/scripts/sync_onedrive_server.sh
+ExecStartPost=%h/eth-agent/app/.venv/bin/eth-agent index

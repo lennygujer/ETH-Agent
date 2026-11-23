@@ -5,20 +5,27 @@ Terminal-Chat und (später) der FastAPI-Server rufen dieselbe Funktion auf.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
 from ..checks.sandbox import CheckResult, check_answer
-from ..config import REPO_ROOT, Config, Course
+from ..config import ALL_COURSES, REPO_ROOT, Config, Course
 from ..llm.providers import ClaudeProvider, CodexProvider, LLMResult, Provider
 from ..llm.usage import UsageLog
 from ..retrieval.search import search
 from ..retrieval.store import ChunkRow, Store
 from .references import resolve
-from .routing import Route, est_tokens, route
+from .routing import SKILLS, Route, est_tokens, route
 
 PROMPTS = REPO_ROOT / "prompts"
+_COURSE_PREFIX = re.compile(r"^\s*[/!]([\wäöüÄÖÜ-]+)\b[ \t]*")
+
+
+def slug_token(t: str) -> str:
+    from ..config import slug
+    return slug(t)
 LANG_NAMES = {"de": "German (Swiss conventions: 'ss' instead of 'ß')", "en": "English"}
 CONTEXT_BUDGET = 12_000   # Tokens Kursmaterial pro Cloud-Aufruf (v4)
 
@@ -41,14 +48,17 @@ class Answer:
     prompt: str | None = None
     status: list[str] = field(default_factory=list)
     prerendered: bool = False     # Skills liefern fertig formatierten Text
+    names: dict[str, str] = field(default_factory=dict)   # Kurs-ID -> Name für Zitate
+    course: Course | None = None  # Fach, in dem geantwortet wurde
 
-    def render(self, course_name: str) -> str:
+    def render(self, course_name: str | None = None) -> str:
         if self.prerendered:
             return self.text.strip()
         parts = [self.text.strip()]
         if self.sources:
             parts.append("---\n**Quellen**\n" + "\n".join(
-                f"[{i}] {c.citation(course_name)}" for i, c in enumerate(self.sources, 1)))
+                f"[{i}] {c.citation(self.names.get(c.course) or course_name)}"
+                for i, c in enumerate(self.sources, 1)))
         footer = [f"Geprüft: {self.check.badge}"]
         if self.check.status == "pass":
             footer[0] += " (Prüfcode vom selben Modell)"
@@ -69,8 +79,9 @@ def _fill(template: str, **values: str) -> str:
     return template
 
 
-def _format_chunk(n: int, c: ChunkRow, course_name: str, label: str | None = None) -> str:
-    head = f"[{n}] " + (f"{label} " if label else "") + c.citation(course_name)
+def _format_chunk(n: int, c: ChunkRow, course_name: str | dict, label: str | None = None) -> str:
+    name = course_name.get(c.course, c.course) if isinstance(course_name, dict) else course_name
+    head = f"[{n}] " + (f"{label} " if label else "") + c.citation(name)
     if c.section:
         head += f"\n({c.section})"
     return f"### {head}\n{c.text.strip()}"
@@ -89,13 +100,17 @@ class Agent:
         self.encode = encode
         self.embedding_model = embedding_model
 
+    @property
+    def names(self) -> dict[str, str]:
+        return {cid: c.name for cid, c in self.cfg.courses.items()}
+
     # ------------------------------------------------------------------ Material
     def _gather(self, course: Course, question: str, history: list[Turn],
                 status: list[str]) -> tuple[list[tuple[ChunkRow, str | None]], str | None]:
         """Gibt [(Chunk, Label)] und eine Beschreibung des aufgelösten Verweises zurück."""
         picked: list[tuple[ChunkRow, str | None]] = []
         ref_desc = None
-        ref = resolve(self.store, course.id, question)
+        ref = resolve(self.store, course.id, question) if course.id else None
         if ref and ref.chunks:
             ref_desc = f"{ref.kind} '{ref.file_pair_key}', Aufgabe {ref.problem_no}"
             status.append(f"Aufgabe gefunden: {ref.chunks[0].citation(course.name)}")
@@ -114,7 +129,7 @@ class Agent:
             prev = [t.text for t in history if t.role == "user"][-1:]
             query = " ".join(prev + [question])
         status.append("Suche im Kursmaterial …")
-        hits = search(self.store, query, course=course.id, top_k=self.cfg.retrieval.top_k,
+        hits = search(self.store, query, course=course.id or None, top_k=self.cfg.retrieval.top_k,
                       final_k=self.cfg.retrieval.final_k + 3, embedding_model=self.embedding_model,
                       encode=self.encode, semantic_weight=self.cfg.retrieval.semantic_weight,
                       keyword_weight=self.cfg.retrieval.keyword_weight)
@@ -153,12 +168,70 @@ class Agent:
         if history:
             lines = [f"**{'Student' if t.role == 'user' else 'Assistant'}:** {t.text[:1500]}" for t in history[-6:]]
             hist = "## Conversation so far (for context)\n\n" + "\n\n".join(lines)
-        context = "\n\n".join(_format_chunk(i, c, course.name, lab) for i, (c, lab) in enumerate(picked, 1)) \
+        context = "\n\n".join(_format_chunk(i, c, self.names, lab) for i, (c, lab) in enumerate(picked, 1)) \
             or "(no matching course material found)"
-        return _fill(_template("answer.md"), course_name=course.name,
+        cname = course.name if course.id else "several ETH courses (D-ITET); the excerpts show which course they come from"
+        return _fill(_template("answer.md"), course_name=cname,
                      output_language_name=LANG_NAMES.get(course.output_language, course.output_language),
                      solution_policy=policy, check_instructions=check, question=r.question,
                      history_section=hist, context=context)
+
+    # ------------------------------------------------------------------ Fach
+    def course_list(self, current: Course | None = None) -> str:
+        files = {}
+        for row in self.store.files():
+            files[row["course"]] = files.get(row["course"], 0) + 1
+        lines = ["**Fächer** (wechseln mit `/<kürzel>`, alle Fächer: `/alle`)", "",
+                 "| Fach | Semester | Kürzel | Dateien im Index |", "|---|---|---|---|"]
+        from ..config import auto_aliases, semester_key
+        for c in sorted(self.cfg.courses.values(), key=lambda c: (semester_key(c.semester), c.name), reverse=True):
+            al = sorted(set(c.aliases) | {a for a in auto_aliases(c.name) if self.cfg.resolve_course(a) is c},
+                        key=len)[:3]
+            mark = " ← aktiv" if current is not None and current.id == c.id else ""
+            lines.append(f"| {c.name}{mark} | {c.semester or '–'} | {', '.join('/' + a for a in al)} | "
+                         f"{files.get(c.id, 0)} |")
+        return "\n".join(lines)
+
+    def _course_from_token(self, token: str) -> Course | None:
+        if slug_token(token) in {"alle", "all"}:
+            return ALL_COURSES
+        return self.cfg.resolve_course(token)
+
+    def select_course(self, message: str, history: list[Turn], course_id: str | None
+                      ) -> tuple[Course, str, Answer | None]:
+        """Fach bestimmen: '/physik ...' in dieser Nachricht, sonst letzter Wechsel im Verlauf,
+        sonst --course / default_course, sonst alle Fächer."""
+        r0 = Route("FACH", "fach", message)
+        m = _COURSE_PREFIX.match(message)
+        if m and m.group(1).lower() in {"kurse", "faecher", "fächer", "fach", "courses"}:
+            current, _, _ = self.select_course("", history, course_id)
+            return current, "", Answer(self.course_list(current), r0, prerendered=True)
+        if m and m.group(1).lower() not in SKILLS:
+            c = self._course_from_token(m.group(1))
+            if c is None:
+                return ALL_COURSES, "", Answer(
+                    f"Unbekanntes Fach oder Befehl `/{m.group(1)}`.\n\n" + self.course_list(), r0, prerendered=True)
+            rest = message[m.end():].strip()
+            if not rest:
+                txt = (f"Fach gewechselt: **{c.label}**. Frag los." if c.id
+                       else "Suche jetzt wieder in **allen Fächern**.")
+                return c, "", Answer(txt, r0, prerendered=True)
+            return c, rest, None
+        if course_id:
+            return self.cfg.courses[course_id], message, None
+        for t in reversed(history):
+            if t.role != "user":
+                continue
+            hm = _COURSE_PREFIX.match(t.text)
+            if hm and hm.group(1).lower() not in SKILLS:
+                c = self._course_from_token(hm.group(1))
+                if c is not None:
+                    return c, message, None
+        if self.cfg.default_course and self.cfg.default_course in self.cfg.courses:
+            return self.cfg.courses[self.cfg.default_course], message, None
+        if len(self.cfg.courses) == 1:
+            return next(iter(self.cfg.courses.values())), message, None
+        return ALL_COURSES, message, None
 
     # ------------------------------------------------------------------ Ablauf
     def _call(self, name: str, prompt: str, r: Route, status: list[str]) -> LLMResult:
@@ -174,6 +247,15 @@ class Agent:
 
     def handle(self, message: str, *, course_id: str | None = None, history: list[Turn] | None = None,
                on_status: Callable[[str], None] | None = None, images: list[str] | None = None) -> Answer:
+        holder: dict = {}
+        ans = self._handle(message, course_id=course_id, history=history, on_status=on_status, images=images,
+                           holder=holder)
+        ans.names = self.names
+        ans.course = holder.get("course")
+        return ans
+
+    def _handle(self, message: str, *, course_id: str | None, history: list[Turn] | None,
+                on_status: Callable[[str], None] | None, images: list[str] | None, holder: dict) -> Answer:
         history = history or []
         status: list[str] = []
 
@@ -184,12 +266,18 @@ class Agent:
                     on_status(s)
         status = _Status()
 
-        course = self.cfg.courses[course_id] if course_id else next(iter(self.cfg.courses.values()))
+        course, message, early = self.select_course(message, history, course_id)
+        holder["course"] = course
+        if early is not None:
+            return early
         r = route(message)
         if r.provider == "skill":
             if r.skill == "help":
                 return Answer(HELP, r)
             if r.skill == "check":
+                if not course.id:
+                    return Answer("Für `/check` bitte zuerst ein Fach wählen, z. B. `/physik`. Alle Fächer: `/kurse`.",
+                                  r)
                 from ..skills.check import run_check
                 rep = run_check(self, r.question, course_id=course.id, images=images, on_status=status.append)
                 return Answer(rep.render(course.name), r, provider=rep.grader, sources=rep.sources,
@@ -198,6 +286,8 @@ class Agent:
         if not r.question:
             return Answer("Bitte eine Frage eingeben.", r)
 
+        if course.id:
+            status.append(f"Fach: {course.label}")
         picked, ref_desc = self._gather(course, r.question, history, status)
         prompt = self.build_prompt(course, r, picked, history)
 
@@ -240,5 +330,7 @@ HELP = """**ETH-Agent – Befehle**
   und (falls vorhanden) die Musterlösung direkt aus dem Material.
 - `/check Serie 3 Aufgabe 1` und darunter dein Lösungsweg: Korrektur mit Punkteschätzung, erstem Fehler und
   Hinweis. Eigene Aufgabe: Aufgabentext, dann eine Zeile `---`, dann dein Versuch. `--loesung` zeigt die Lösung.
+- **Fach wählen:** `/physik`, `/analysis`, `/sst` … (gilt für den ganzen Chat). `/kurse` zeigt alle Fächer und
+  Kürzel, `/alle` sucht wieder in allen Fächern. Auch kombinierbar: `/physik Erkläre den Tunneleffekt`.
 - Geplant: `/repeat`, `/practice`, `/diagnose`, `/learn`, `/rewrite`.
 """

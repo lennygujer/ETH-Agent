@@ -13,6 +13,7 @@ Design und Entscheidungen: Projekt „Eigener Agent“ → `Agent Architecture v
 | 2 | `handle()`, Terminal-Chat, Codex/Claude-Aufruf, Prüfcode-Sandbox, Aufgaben-Verweise | ✅ erste Version |
 | 3 | `/check` mit Referenz-Herstellung, Fehlerkatalog | ✅ erste Version |
 | 7 (vorgezogen) | Server für Open WebUI, Dienst mit Autostart | ✅ erste Version |
+| – | Alle Fächer: automatische Erkennung, `/fach`-Umschaltung, OneDrive-Sync, Word/PowerPoint/Code/Notebooks | ✅ erste Version |
 
 ## Installation (Server)
 
@@ -31,6 +32,22 @@ ETH_AGENT_HOST=127.0.0.1 ./scripts/setup_service.sh   # 172.17.0.1, falls Open W
 
 Danach in Open WebUI eine OpenAI-Verbindung mit `http://<host>:8100/v1` und dem angezeigten Schlüssel anlegen.
 Details: `docs/open-webui.md`.
+
+## Fächer
+
+Der Agent erkennt jedes Fach im gespiegelten OneDrive-Ordner (`material/<Semester>/<Fach>/`) automatisch.
+
+- `/kurse` – alle Fächer mit Kürzeln
+- `/physik`, `/analysis`, `/sst`, `/dm` … – Fach wählen (gilt für den ganzen Chat; bei gleichem Namen gewinnt das neueste Semester)
+- `/physik Erkläre den Tunneleffekt` – Fach und Frage in einer Nachricht
+- `/alle` – wieder über alle Fächer suchen (Standard, solange kein Fach gewählt ist)
+
+Eigene Kürzel: `course_aliases` in `config.yaml`.
+
+## OneDrive-Sync
+
+Siehe `docs/sync.md`: entweder holt der Server den ETH-Ordner direkt aus OneDrive (rclone, alle 3 h),
+oder der Windows-PC schiebt ihn per SFTP. Danach indexiert der Agent neue Dateien (zusätzlich jede Nacht 03:30).
 
 ## Material bereitstellen
 
@@ -116,6 +133,7 @@ src/eth_agent/
   indexer/pdf.py       PDF -> Zeilen, Überschriften, gedruckte Seitenzahlen
   indexer/doctypes.py  Dokumenttyp, Paarschlüssel Aufgabe <-> Lösung, Deckblatt-Metadaten
   indexer/chunking.py  Chunks pro Aufgabe bzw. Abschnitt
+  indexer/readers.py   Word, PowerPoint, Markdown/LaTeX, Code, Jupyter
   indexer/build.py     inkrementelle Indexierung, Embeddings
   retrieval/store.py   SQLite + FTS5 + Vektoren
   retrieval/search.py  hybride Suche (gewichtete RRF)

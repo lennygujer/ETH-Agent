@@ -125,7 +125,6 @@ def _agent(cfg, keyword_only: bool = False):
 
 
 def _print_answer(cfg, ans, course_id, debug: bool) -> None:
-    course = cfg.courses[course_id] if course_id else next(iter(cfg.courses.values()))
     if debug:
         print(f"\n[Route {ans.route.rule} -> {ans.route.provider}"
               + (f", Verweis: {ans.reference}" if ans.reference else "") + "]")
@@ -135,7 +134,7 @@ def _print_answer(cfg, ans, course_id, debug: bool) -> None:
         if ans.check.status != "none":
             print("[Prüfcode-Ausgabe]\n" + textwrap.indent(ans.check.output or "(leer)", "  "))
     print("\n" + "─" * 70)
-    print(ans.render(course.name))
+    print(ans.render())
     print("─" * 70)
 
 

@@ -1,0 +1,11 @@
+[Unit]
+Description=ETH-Agent: Kursmaterial neu indexieren (nur neue/geänderte Dateien)
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/eth-agent/app
+Environment=PYTHONUNBUFFERED=1
+# niedrige Priorität, damit Open WebUI und der Agent flüssig bleiben
+Nice=15
+IOSchedulingClass=idle
+ExecStart=%h/eth-agent/app/.venv/bin/eth-agent index
