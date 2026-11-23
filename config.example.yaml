@@ -1,0 +1,45 @@
+# Kopieren nach config.yaml und Pfade anpassen.
+
+# Wurzel des gespiegelten OneDrive-Ordners. Darunter liegt pro Kurs ein Ordner.
+material_root: ~/eth-agent/material
+
+# Index, Manifest, Cache.
+data_dir: ~/eth-agent/data
+
+courses:
+  # Schlüssel = Kurs-ID (kurz, ohne Leerzeichen); folder = Ordnername unter material_root
+  physik2:
+    folder: "Physik 2"
+    name: "Physik II (Quantenmechanik)"
+    output_language: de
+    # Hauptskript für Notation und Zitate
+    notation_source: "Sheets/script_phys_II.pdf"
+
+# Zuordnung Unterordner -> Dokumenttyp (Gross-/Kleinschreibung egal).
+# Dateinamen mit "exam"/"pruefung"/"prüfung" werden immer als Prüfung erkannt,
+# Dateinamen mit "formula"/"formel" als Formelsammlung, "script"/"skript" als Skript.
+folder_doc_types:
+  exercises: serie
+  serien: serie
+  exercise solutions: serie_loesung
+  serien loesungen: serie_loesung
+  exams: pruefung
+  pruefungen: pruefung
+  exam solutions: pruefung_loesung
+  pruefungen loesungen: pruefung_loesung
+  sheets: skript
+  skripte: skript
+  übungsstunden: uebungsstunde
+  uebungsstunden: uebungsstunde
+  notizen: notizen
+  papers: paper
+
+retrieval:
+  chunk_tokens: 600        # Skript/Notizen: Zielgrösse pro Abschnitt
+  overlap_tokens: 80
+  top_k: 20                # Kandidaten vor Fusion/Rerank
+  final_k: 5
+  # Embeddings (nur mit `pip install .[embed]`). leer lassen = nur BM25.
+  embedding_model: "BAAI/bge-m3"   # Fallback bei wenig RAM: "intfloat/multilingual-e5-small"
+  semantic_weight: 0.7
+  keyword_weight: 0.3

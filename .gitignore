@@ -1,0 +1,17 @@
+# Kursmaterial und erzeugte Daten gehören nicht ins Repo
+material/
+data/
+*.pdf
+*.zip
+
+# Lokale Konfiguration und Geheimnisse
+config.yaml
+.env
+
+# Python
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+build/
+dist/
