@@ -20,10 +20,15 @@ class Course:
     name: str
     output_language: str = "de"
     notation_source: str | None = None
-    # tutor = bei Serien nur Hinweise (für Bonus/Testat-Serien), full = vollständige Lösungen
-    serien_mode: str = "tutor"
+    # hints = bei Aufgaben zuerst nur Tipps, ganze Lösung erst auf Wunsch (--loesung); full = sofort ganze Lösung
+    solution_mode: str = "hints"
+    serien_mode: str | None = None          # veraltet: tutor -> hints, full -> full
     semester: str | None = None              # "HS26", aus dem Ordner erkannt
     aliases: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if self.serien_mode:
+            self.solution_mode = "full" if self.serien_mode == "full" else "hints"
 
     @property
     def label(self) -> str:

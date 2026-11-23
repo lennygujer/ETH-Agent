@@ -119,10 +119,10 @@ Kosten: mit Musterlösung 1 Cloud-Aufruf, ohne Musterlösung 3.
 1. **Routing** (`agent/routing.py`): `@codex`/`@claude` erzwingt ein Modell, `/befehl` ist ein Skill, sehr lange Texte gehen an Claude, sonst Codex. Fällt Codex aus (Limit, Fehler), übernimmt Claude, ausser das Modell wurde ausdrücklich gewählt.
 2. **Verweise** (`agent/references.py`): *Serie 3 Aufgabe 1*, *Prüfung Aug 2025 Aufgabe 4*, *Prüfung HS2022 Aufgabe 2*, *Mock Exam 2 Aufgabe 1* holen die Aufgabe und die Musterlösung exakt aus dem Index.
 3. **Suche**: weiteres Material (Skript, Übungsstunden, ähnliche Prüfungsaufgaben), maximal ~12 000 Tokens.
-4. **Prompt** aus `prompts/answer.md`: Frage wörtlich, Material mit Zitat-Labels, Lösungsregel (Serien im Modus `tutor` nur Hinweise).
+4. **Prompt** aus `prompts/answer.md`: Frage wörtlich, Material mit Zitat-Labels, Lösungsregel (bei Aufgaben zuerst Tipps, `prompts/hints.md`).
 5. **Prüfcode**: Das Modell hängt einen ```` ```python check ```` -Block an, der die Ergebnisse unabhängig nachrechnet. Er läuft in einer Sandbox (eigener Prozess, Zeit-/Speicherlimit, wenn möglich ohne Netz). Ergebnis als Badge: `Tool ✓`, `Tool ✗`, `ungeprüft`. Der Prüfcode stammt in Phase 2 noch vom selben Modell; ab Phase 3 schreibt ihn das andere Modell.
 
-`serien_mode` pro Kurs in `config.yaml`: `tutor` (Standard, für Serien mit Bonus/Testat) oder `full`.
+**Tipps zuerst:** Bei Aufgaben gibt der Agent zuerst Tipps (Ansatz, erster Schritt, typische Falle); *noch ein Tipp* geht eine Stufe weiter, die ganze Lösung gibt es mit `--loesung` oder `/loesung …`. Pro Fach umstellbar mit `solution_mode: full`.
 
 ## Aufbau
 

@@ -122,7 +122,7 @@ class CheckReport:
         if self.reveal and not self.reveal_blocked:
             out.append("### Lösung (Referenz)\n" + self.reference_text)
         elif self.reveal_blocked:
-            out.append("*Lösung nicht angezeigt: Diese Serie steht auf `serien_mode: tutor`.*")
+            out.append("*Lösung nicht angezeigt.*")
         else:
             out.append("*Lösung anzeigen: dieselbe Eingabe mit `--loesung` wiederholen.*")
         if self.sources:
@@ -322,8 +322,7 @@ def run_check(agent: "Agent", text: str, *, course_id: str | None = None, images
     trust = trust_level(bool(official), solutions, grade.get("reference_agreement"))
     _log_error(agent, course.id, label, grade)
 
-    blocked = bool(inp.reveal and course.serien_mode == "tutor" and problem_chunks
-                   and problem_chunks[0].doc_type == "serie")
+    blocked = False   # ganze Lösung gibt es immer auf ausdrücklichen Wunsch (--loesung)
     # Skript-Auszüge wurden nur den unabhängigen Lösern gegeben, nicht dem Bewerter bei Musterlösung.
     sources = problem_chunks[:1] + official[:1] + ([] if official else context_chunks)
     return CheckReport(label, True, trust=trust, grade=grade, grader=grader, student_check=student_check,

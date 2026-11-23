@@ -23,6 +23,25 @@ PROMPTS = REPO_ROOT / "prompts"
 _COURSE_PREFIX = re.compile(r"^\s*[/!]([\wäöüÄÖÜ-]+)\b[ \t]*")
 
 
+_FULL_FLAG = re.compile(r"\s*--\s*(l(ö|oe)sung|solution|full)\b", re.I)
+_FULL_PREFIX = re.compile(r"^\s*[/!]l(ö|oe)sung\b\s*", re.I)
+_FULL_WORDS = re.compile(r"\b(ganze|vollst(ä|ae)ndige|komplette|ganzen|vollst(ä|ae)ndigen|kompletten)\s+"
+                         r"(l(ö|oe)sung|l(ö|oe)sungsweg|rechnung|herleitung)|\bmusterl(ö|oe)sung\s+zeigen|"
+                         r"\bfull solution\b", re.I)
+
+
+def wants_full_solution(message: str) -> tuple[str, bool]:
+    """'--loesung', '/loesung ...' oder 'zeig mir die ganze Lösung' -> (Nachricht ohne Schalter, True)."""
+    full = False
+    if _FULL_PREFIX.match(message):
+        message, full = _FULL_PREFIX.sub("", message, count=1), True
+    if _FULL_FLAG.search(message):
+        message, full = _FULL_FLAG.sub("", message), True
+    if _FULL_WORDS.search(message):
+        full = True
+    return message.strip(), full
+
+
 def slug_token(t: str) -> str:
     from ..config import slug
     return slug(t)
@@ -111,6 +130,14 @@ class Agent:
         picked: list[tuple[ChunkRow, str | None]] = []
         ref_desc = None
         ref = resolve(self.store, course.id, question) if course.id else None
+        if course.id and (ref is None or not ref.chunks) and history:
+            # Folgefrage ("noch ein Tipp", "zeig die ganze Lösung"): Aufgabe aus dem Verlauf übernehmen
+            for t in reversed(history):
+                if t.role == "user":
+                    prev = resolve(self.store, course.id, t.text)
+                    if prev and prev.chunks:
+                        ref = prev
+                        break
         if ref and ref.chunks:
             ref_desc = f"{ref.kind} '{ref.file_pair_key}', Aufgabe {ref.problem_no}"
             status.append(f"Aufgabe gefunden: {ref.chunks[0].citation(course.name)}")
@@ -148,13 +175,18 @@ class Agent:
         return picked, ref_desc
 
     # ------------------------------------------------------------------ Prompt
-    def build_prompt(self, course: Course, r: Route, picked, history: list[Turn]) -> str:
+    def hints_mode(self, course: Course, r: Route, picked, full: bool) -> bool:
+        """Tipps statt Lösung: bei Aufgaben (Verweis oder Rechen-/Beweisauftrag), ausser ganze Lösung gewünscht."""
+        if full or course.solution_mode == "full":
+            return False
+        is_problem = any(lab == "AUFGABE" for _, lab in picked) or r.rule == "R4"
+        return is_problem
+
+    def build_prompt(self, course: Course, r: Route, picked, history: list[Turn], hints: bool = False) -> str:
         has_solution = any(lab == "MUSTERLÖSUNG" for _, lab in picked)
-        if has_solution and course.serien_mode == "tutor" and any(
-                c.doc_type == "serie" for c, lab in picked if lab == "AUFGABE"):
-            policy = ("Solution policy: this exercise sheet is in TUTOR mode. Do NOT give the full solution. "
-                      "Give hints, explain the concepts needed and check the student's own attempt if provided. "
-                      "Use the official solution (marked MUSTERLÖSUNG) only to make sure your hints are correct.")
+        if hints:
+            policy = _template("hints.md") + ("\nThe official solution (marked MUSTERLÖSUNG) is included only so that "
+                                              "your hints are correct. Never reveal it." if has_solution else "")
         elif has_solution:
             policy = ("Solution policy: an official solution is included (marked MUSTERLÖSUNG). Treat it as the "
                       "reference for correctness, but explain in your own words with all steps, so the student "
@@ -163,7 +195,7 @@ class Agent:
         else:
             policy = ("Solution policy: no official solution is available for this question. Work carefully, "
                       "check limits, units and signs yourself.")
-        check = _template("check_block.md") if r.tool_verify else ""
+        check = _template("check_block.md") if (r.tool_verify and not hints) else ""
         hist = ""
         if history:
             lines = [f"**{'Student' if t.role == 'user' else 'Assistant'}:** {t.text[:1500]}" for t in history[-6:]]
@@ -270,7 +302,10 @@ class Agent:
         holder["course"] = course
         if early is not None:
             return early
+        message, full = wants_full_solution(message)
         r = route(message)
+        if r.skill == "check" and full:
+            r.question += " --loesung"     # /check wertet den Schalter selbst aus
         if r.provider == "skill":
             if r.skill == "help":
                 return Answer(HELP, r)
@@ -289,7 +324,10 @@ class Agent:
         if course.id:
             status.append(f"Fach: {course.label}")
         picked, ref_desc = self._gather(course, r.question, history, status)
-        prompt = self.build_prompt(course, r, picked, history)
+        hints = self.hints_mode(course, r, picked, full)
+        if hints:
+            status.append("Tipp-Modus (ganze Lösung: --loesung)")
+        prompt = self.build_prompt(course, r, picked, history, hints=hints)
 
         order = [r.provider] + [p for p in ("codex", "claude") if p != r.provider]
         missing = [p for p in order if p not in self.providers or not self.providers[p].available()]
@@ -314,7 +352,7 @@ class Agent:
                           sources=[c for c, _ in picked], llm=res, prompt=prompt, status=list(status))
 
         text, chk = res.text, CheckResult("none", "")
-        if r.tool_verify:
+        if r.tool_verify and not hints:
             text, chk = check_answer(res.text)
             if chk.status != "none":
                 status.append(f"Prüfcode: {chk.badge}")
@@ -330,6 +368,8 @@ HELP = """**ETH-Agent – Befehle**
   und (falls vorhanden) die Musterlösung direkt aus dem Material.
 - `/check Serie 3 Aufgabe 1` und darunter dein Lösungsweg: Korrektur mit Punkteschätzung, erstem Fehler und
   Hinweis. Eigene Aufgabe: Aufgabentext, dann eine Zeile `---`, dann dein Versuch. `--loesung` zeigt die Lösung.
+- **Aufgaben:** Standardmässig gibt es zuerst **Tipps** (Ansatz, erster Schritt, typische Falle). *noch ein Tipp*
+  geht eine Stufe weiter. Die ganze Lösung mit `--loesung` am Ende oder `/loesung Serie 3 Aufgabe 1`.
 - **Fach wählen:** `/physik`, `/analysis`, `/sst` … (gilt für den ganzen Chat). `/kurse` zeigt alle Fächer und
   Kürzel, `/alle` sucht wieder in allen Fächern. Auch kombinierbar: `/physik Erkläre den Tunneleffekt`.
 - Geplant: `/repeat`, `/practice`, `/diagnose`, `/learn`, `/rewrite`.

@@ -58,11 +58,11 @@ def test_handle_with_reference_and_check(course_dir):  # noqa: F811
     assert ref and ref.problem_no == "2" and ref.chunks[0].doc_type == "pruefung"
 
     status = []
-    ans = agent.handle("Löse Prüfung 2024 Aufgabe 2", on_status=status.append)
+    ans = agent.handle("Löse Prüfung 2024 Aufgabe 2 --loesung", on_status=status.append)
     assert ans.provider == "codex" and ans.check.status == "pass"
     assert "```" not in ans.text
     prompt = agent.providers["codex"].prompts[-1]
-    assert "## Question (verbatim)\n\nLöse Prüfung 2024 Aufgabe 2" in prompt
+    assert "## Question (verbatim)\n\nLöse Prüfung 2024 Aufgabe 2\n" in prompt
     assert "### [1] AUFGABE [Physik II – PhysII_Exam_2024.pdf, Aufgabe 2, S. 3]" in prompt
     assert "### [2] MUSTERLÖSUNG [Physik II – PhysII_Exam_2024_solns.pdf, Aufgabe 2" in prompt
     assert agent.providers["codex"].efforts[-1] == "medium"     # Aufgabe -> mehr Denkaufwand
@@ -80,7 +80,7 @@ def test_failed_check_and_fallback(course_dir):  # noqa: F811
                    claude=FakeProvider("claude", reply=CHECK_FAIL))
     index_course(cfg, agent.store, cfg.courses["physik2"], log=lambda *_: None)
     status = []
-    ans = agent.handle("Berechne die Johnson noise", on_status=status.append)
+    ans = agent.handle("Berechne die Johnson noise --loesung", on_status=status.append)
     assert ans.provider == "claude"                    # Fallback bei Limit
     assert any("Limit erreicht" in s for s in status)
     assert ans.check.status == "fail" and "Tool ✗" in ans.render("Physik II")
@@ -93,7 +93,7 @@ def test_named_model_no_silent_fallback(course_dir):  # noqa: F811
     assert ans.provider == "claude" and ans.llm and not ans.llm.ok
 
 
-def test_tutor_mode_for_series(course_dir):  # noqa: F811
+def test_hints_first_and_full_solution(course_dir):  # noqa: F811
     cfg = make_cfg(course_dir)
     root = cfg.material_root / "Physik 2"
     import pymupdf
@@ -106,15 +106,36 @@ def test_tutor_mode_for_series(course_dir):  # noqa: F811
         pg.insert_text((60, 110), txt, fontsize=11, fontname="helv")
         (root / name).parent.mkdir(parents=True, exist_ok=True)
         doc.save(root / name)
-    agent = _agent(cfg, codex=FakeProvider("codex"))
+    codex = FakeProvider("codex", reply=CHECK_OK)
+    agent = _agent(cfg, codex=codex)
     index_course(cfg, agent.store, cfg.courses["physik2"], log=lambda *_: None)
-    agent.handle("Löse Serie 2 Aufgabe 1")
-    assert "TUTOR mode" in agent.providers["codex"].prompts[-1]
 
-    cfg.courses["physik2"] = replace(cfg.courses["physik2"], serien_mode="full")
-    agent.handle("Löse Serie 2 Aufgabe 1", history=[Turn("user", "Hallo")])
-    p = agent.providers["codex"].prompts[-1]
-    assert "TUTOR mode" not in p and "Conversation so far" in p
+    status = []
+    ans = agent.handle("Löse Serie 2 Aufgabe 1", on_status=status.append)
+    p = codex.prompts[-1]
+    assert "HINT MODE" in p and "Never reveal it" in p and "```python check" not in p
+    assert any("Tipp-Modus" in s for s in status) and ans.check.status == "none"
+
+    # Folgefrage ohne Verweis: Aufgabe kommt aus dem Verlauf, weiter Tipp-Modus
+    hist = [Turn("user", "Löse Serie 2 Aufgabe 1"), Turn("assistant", "Tipp 1 ...")]
+    agent.handle("noch ein Tipp", history=hist)
+    p = codex.prompts[-1]
+    assert "HINT MODE" in p and "### [1] AUFGABE" in p and "Tipp 1" in p
+
+    for msg in ("Löse Serie 2 Aufgabe 1 --loesung", "/loesung Serie 2 Aufgabe 1",
+                "Zeig mir die ganze Lösung von Serie 2 Aufgabe 1"):
+        agent.handle(msg)
+        p = codex.prompts[-1]
+        assert "HINT MODE" not in p and "MUSTERLÖSUNG" in p and "--loesung" not in p.split("## Question (verbatim)")[1][:80]
+
+    # Erklärungen bleiben vollständig
+    agent.handle("Was ist ein Operator?")
+    assert "HINT MODE" not in codex.prompts[-1]
+
+    # solution_mode: full im Fach -> sofort ganze Lösung
+    cfg.courses["physik2"] = replace(cfg.courses["physik2"], solution_mode="full")
+    agent.handle("Löse Serie 2 Aufgabe 1")
+    assert "HINT MODE" not in codex.prompts[-1]
 
 
 def test_skills_not_yet_built(course_dir):  # noqa: F811

@@ -55,7 +55,7 @@ def eth(tmp_path):
     cfg_file.write_text(yaml.safe_dump({
         "material_root": str(root), "data_dir": str(tmp_path / "data"),
         "course_aliases": {"sst": "System und Signaltheorie"},
-        "course_defaults": {"serien_mode": "full"},
+        "course_defaults": {"solution_mode": "full"},
         "courses": {"physik2": {"folder": "Physik 2", "name": "Physik II"}},
     }, allow_unicode=True))
     return load_config(cfg_file)
@@ -67,7 +67,7 @@ def test_discovery_and_aliases(eth):
             "informatik2"} == ids
     assert eth.courses["physik2"].folder == "HS26/Physik 2"          # konfiguriertes Fach umgebogen
     assert eth.courses["physik2"].semester == "HS26"
-    assert eth.courses["systemundsignaltheorie"].serien_mode == "full"  # course_defaults
+    assert eth.courses["systemundsignaltheorie"].solution_mode == "full"  # course_defaults
     r = eth.resolve_course
     assert r("physik").id == "physik2"            # neuestes Semester gewinnt
     assert r("physik1").id == "physik1"
