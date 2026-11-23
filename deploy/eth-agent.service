@@ -1,6 +1,9 @@
 [Unit]
 Description=ETH-Agent (OpenAI-kompatibler Server für Open WebUI)
 After=network-online.target
+# höchstens 3 Neustarts in 5 Minuten, dann aufgeben (statt Endlosschleife)
+StartLimitIntervalSec=300
+StartLimitBurst=3
 
 [Service]
 Type=simple
@@ -11,7 +14,7 @@ Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 Environment=PYTHONUNBUFFERED=1
 ExecStart=%h/eth-agent/app/.venv/bin/eth-agent serve --host ${ETH_AGENT_HOST} --port ${ETH_AGENT_PORT}
 Restart=on-failure
-RestartSec=5
+RestartSec=15
 
 [Install]
 WantedBy=default.target

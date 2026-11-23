@@ -29,7 +29,7 @@ cd ~/eth-agent/app
 ETH_AGENT_HOST=127.0.0.1 ./scripts/setup_service.sh   # 172.17.0.1, falls Open WebUI in Docker (Bridge) läuft
 ```
 
-Danach in Open WebUI eine OpenAI-Verbindung mit `http://<host>:8000/v1` und dem angezeigten Schlüssel anlegen.
+Danach in Open WebUI eine OpenAI-Verbindung mit `http://<host>:8100/v1` und dem angezeigten Schlüssel anlegen.
 Details: `docs/open-webui.md`.
 
 ## Material bereitstellen

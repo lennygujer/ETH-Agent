@@ -3,6 +3,14 @@
 Der ETH-Agent erscheint in Open WebUI als eigenes Modell „eth-agent“, neben den anderen Modellen.
 Open WebUI und der Agent laufen beide auf dem Ubuntu-Server.
 
+## 0. Open WebUI im Browser öffnen
+
+Läuft Open WebUI mit `HOST=127.0.0.1`, ist es nur über `tailscale serve` (oder einen SSH-Tunnel) erreichbar:
+
+```bash
+tailscale serve status          # zeigt die Adresse, z. B. https://lambda.<name>.ts.net
+```
+
 ## 1. Wie läuft Open WebUI?
 
 ```bash
@@ -11,9 +19,9 @@ docker ps --format '{{.Names}}  {{.Image}}  {{.Ports}}' | grep -i webui
 
 | Ergebnis | Fall | Server-Adresse (`ETH_AGENT_HOST`) | URL in Open WebUI |
 |---|---|---|---|
-| keine Zeile (Open WebUI direkt installiert, z. B. `pip`) | nativ | `127.0.0.1` | `http://127.0.0.1:8000/v1` |
-| Container mit `--network host` | Docker, Host-Netz | `127.0.0.1` | `http://127.0.0.1:8000/v1` |
-| Container mit Ports wie `0.0.0.0:3000->8080/tcp` | Docker, Bridge | `172.17.0.1` | `http://172.17.0.1:8000/v1` |
+| keine Zeile (Open WebUI direkt installiert, z. B. `pip`) | nativ | `127.0.0.1` | `http://127.0.0.1:8100/v1` |
+| Container mit `--network host` | Docker, Host-Netz | `127.0.0.1` | `http://127.0.0.1:8100/v1` |
+| Container mit Ports wie `0.0.0.0:3000->8080/tcp` | Docker, Bridge | `172.17.0.1` | `http://172.17.0.1:8100/v1` |
 
 `172.17.0.1` ist die Adresse des Servers im Docker-Standardnetz (prüfen: `ip -4 addr show docker0`).
 So ist der Agent für den Container erreichbar, aber nicht aus dem WLAN oder Internet.
@@ -30,11 +38,14 @@ Das Skript erzeugt einen API-Schlüssel in `.env`, installiert den Dienst und st
 Prüfen:
 
 ```bash
-curl -s http://127.0.0.1:8000/health      # bzw. 172.17.0.1
+curl -s http://127.0.0.1:8100/health      # bzw. 172.17.0.1
 journalctl --user -u eth-agent -f         # Logs live
 ```
 
 Nach einem `git pull` den Dienst neu starten: `systemctl --user restart eth-agent`.
+
+Belegt schon etwas Port 8100 (z. B. eine SSH-Portweiterleitung), bricht das Skript ab:
+`ETH_AGENT_PORT=8200 ./scripts/setup_service.sh` wählt einen anderen Port.
 
 ## 3. Verbindung in Open WebUI
 

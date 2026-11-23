@@ -221,6 +221,17 @@ def cmd_serve(cfg, args) -> int:
 
     from .server import api_key_from_env, create_app
 
+    import socket
+
+    # Port prüfen, BEVOR das Embedding-Modell (2–3 GB) geladen wird: sonst lädt der Dienst bei
+    # belegtem Port in einer Neustart-Schleife immer wieder das Modell und bremst den Server aus.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            sock.bind((args.host, args.port))
+        except OSError as e:
+            print(f"✗ Port {args.host}:{args.port} ist belegt ({e}). Anderen Port wählen (--port).",
+                  file=sys.stderr)
+            return 2
     key = api_key_from_env(cfg)
     if not key:
         print("! Kein ETH_AGENT_API_KEY gesetzt (Umgebung oder .env) – Server läuft OHNE Schlüssel.",
@@ -292,7 +303,7 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("serve", help="OpenAI-kompatiblen Server für Open WebUI starten")
     s.add_argument("--host", default="127.0.0.1",
                    help="127.0.0.1 = nur lokal; 0.0.0.0 = auch für Docker/Tailscale erreichbar")
-    s.add_argument("--port", type=int, default=8000)
+    s.add_argument("--port", type=int, default=8100)
     s.add_argument("--keyword-only", action="store_true")
 
     s = sub.add_parser("usage", help="Cloud-Aufrufe und Tokens anzeigen")
