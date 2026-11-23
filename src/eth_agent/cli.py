@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import signal
 import sys
 import textwrap
@@ -168,10 +169,51 @@ def cmd_chat(cfg, args) -> int:
             history.clear()
             print("(neues Gespräch)")
             continue
-        ans = agent.handle(msg, course_id=args.course, history=history,
+        images: list[str] = []
+        if re.match(r"^[/!]check\b", msg, re.I):
+            msg, images = _read_check_attempt(msg)
+        ans = agent.handle(msg, course_id=args.course, history=history, images=images,
                            on_status=lambda s: print(f"· {s}"))
         _print_answer(cfg, ans, args.course, args.debug)
         history += [Turn("user", msg), Turn("assistant", ans.text)]
+
+
+def _read_check_attempt(first_line: str) -> tuple[str, list[str]]:
+    """Mehrzeiligen Lösungsversuch im Terminal einlesen. Ende: Zeile mit nur '.'.
+
+    Eine Zeile 'bild: <pfad>' hängt ein Foto an (wird von Codex gelesen).
+    """
+    print("Dein Lösungsweg (mehrere Zeilen; 'bild: pfad.jpg' für ein Foto; Ende mit einer Zeile '.'):")
+    lines, images = [], []
+    while True:
+        try:
+            line = input()
+        except EOFError:
+            break
+        if line.strip() == ".":
+            break
+        m = re.match(r"^\s*(bild|image|foto):\s*(.+)$", line, re.I)
+        if m:
+            images.append(m.group(2).strip().strip('"'))
+            continue
+        lines.append(line)
+    return first_line + "\n" + "\n".join(lines), images
+
+
+def cmd_check(cfg, args) -> int:
+    from pathlib import Path
+
+    attempt = args.attempt or ""
+    if args.attempt_file:
+        attempt = Path(args.attempt_file).read_text(encoding="utf-8")
+    if not attempt and not args.image:
+        attempt = sys.stdin.read() if not sys.stdin.isatty() else ""
+    text = f"/check {args.task}\n---\n{attempt}" + (" --loesung" if args.loesung else "")
+    agent = _agent(cfg, args.keyword_only)
+    ans = agent.handle(text, course_id=args.course, images=args.image or [],
+                       on_status=lambda s: print(f"· {s}", file=sys.stderr))
+    _print_answer(cfg, ans, args.course, args.debug)
+    return 0
 
 
 def cmd_usage(cfg, args) -> int:
@@ -221,13 +263,23 @@ def main(argv: list[str] | None = None) -> int:
         s.add_argument("--debug", action="store_true", help="Route, Dauer, Tokens, Prüfcode-Ausgabe zeigen")
         s.add_argument("--keyword-only", action="store_true", help="ohne Embeddings (schneller Start)")
 
+    s = sub.add_parser("check", help="eigenen Lösungsversuch korrigieren lassen")
+    s.add_argument("task", help='z. B. "Serie 3 Aufgabe 1" oder der Aufgabentext')
+    s.add_argument("--attempt", help="Lösungsversuch als Text")
+    s.add_argument("--attempt-file", help="Lösungsversuch aus Datei (Text/LaTeX/Markdown)")
+    s.add_argument("--image", nargs="+", help="Foto(s) des handschriftlichen Versuchs")
+    s.add_argument("--loesung", action="store_true", help="Referenzlösung mit anzeigen")
+    s.add_argument("--course")
+    s.add_argument("--debug", action="store_true")
+    s.add_argument("--keyword-only", action="store_true")
+
     s = sub.add_parser("usage", help="Cloud-Aufrufe und Tokens anzeigen")
     s.add_argument("--hours", type=int, default=5)
 
     args = p.parse_args(argv)
     cfg = load_config(args.config)
     handler = {"index": cmd_index, "search": cmd_search, "show": cmd_show, "files": cmd_files,
-               "chat": cmd_chat, "ask": cmd_ask, "usage": cmd_usage}[args.cmd]
+               "chat": cmd_chat, "ask": cmd_ask, "check": cmd_check, "usage": cmd_usage}[args.cmd]
     return handler(cfg, args)
 
 

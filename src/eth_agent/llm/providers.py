@@ -40,7 +40,8 @@ class Provider(Protocol):
     name: str
 
     def available(self) -> bool: ...
-    def complete(self, prompt: str, timeout: int = 300, effort: str | None = None) -> LLMResult: ...
+    def complete(self, prompt: str, timeout: int = 300, effort: str | None = None,
+                 images: list[str] | None = None) -> LLMResult: ...
 
 
 def _run(cmd: list[str], timeout: int, cwd: str, stdin: str | None = None) -> subprocess.CompletedProcess:
@@ -52,6 +53,7 @@ def _run(cmd: list[str], timeout: int, cwd: str, stdin: str | None = None) -> su
 
 class CodexProvider:
     name = "codex"
+    supports_images = True
 
     def __init__(self, binary: str = "codex", model: str | None = None, extra_args: list[str] | None = None):
         self.binary = binary
@@ -61,7 +63,8 @@ class CodexProvider:
     def available(self) -> bool:
         return shutil.which(self.binary) is not None
 
-    def complete(self, prompt: str, timeout: int = 300, effort: str | None = None) -> LLMResult:
+    def complete(self, prompt: str, timeout: int = 300, effort: str | None = None,
+                 images: list[str] | None = None) -> LLMResult:
         t0 = time.monotonic()
         with tempfile.TemporaryDirectory(prefix="eth-agent-codex-") as tmp:
             out = Path(tmp) / "answer.md"
@@ -71,6 +74,8 @@ class CodexProvider:
                 cmd += ["-m", self.model]
             if effort:
                 cmd += ["-c", f'model_reasoning_effort="{effort}"']
+            for img in images or []:
+                cmd += ["-i", str(Path(img).resolve())]
             cmd += self.extra_args + [prompt]
             try:
                 p = _run(cmd, timeout, cwd=tmp)
@@ -95,6 +100,7 @@ def _codex_tokens(log: str) -> int | None:
 
 class ClaudeProvider:
     name = "claude"
+    supports_images = False   # claude -p ohne Werkzeuge kann keine Bilddateien lesen
 
     def __init__(self, binary: str = "claude", model: str | None = None, extra_args: list[str] | None = None):
         self.binary = binary
@@ -110,7 +116,8 @@ class ClaudeProvider:
         local = Path("~/.local/bin/claude").expanduser()
         return str(local) if local.exists() else self.binary
 
-    def complete(self, prompt: str, timeout: int = 300, effort: str | None = None) -> LLMResult:
+    def complete(self, prompt: str, timeout: int = 300, effort: str | None = None,
+                 images: list[str] | None = None) -> LLMResult:
         t0 = time.monotonic()
         cmd = [self._bin(), "-p", "--output-format", "json"]
         if self.model:
@@ -149,6 +156,8 @@ class ClaudeProvider:
 class FakeProvider:
     """Für Tests und Trockenläufe: gibt eine feste oder berechnete Antwort zurück."""
 
+    supports_images = True
+
     def __init__(self, name: str = "fake", reply=None, fail: bool = False, rate_limited: bool = False):
         self.name = name
         self.reply = reply or (lambda prompt: "Testantwort.")
@@ -160,7 +169,8 @@ class FakeProvider:
     def available(self) -> bool:
         return True
 
-    def complete(self, prompt: str, timeout: int = 300, effort: str | None = None) -> LLMResult:
+    def complete(self, prompt: str, timeout: int = 300, effort: str | None = None,
+                 images: list[str] | None = None) -> LLMResult:
         self.prompts.append(prompt)
         self.efforts.append(effort)
         if self.fail:

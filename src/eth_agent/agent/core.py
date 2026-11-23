@@ -40,8 +40,11 @@ class Answer:
     llm: LLMResult | None = None
     prompt: str | None = None
     status: list[str] = field(default_factory=list)
+    prerendered: bool = False     # Skills liefern fertig formatierten Text
 
     def render(self, course_name: str) -> str:
+        if self.prerendered:
+            return self.text.strip()
         parts = [self.text.strip()]
         if self.sources:
             parts.append("---\n**Quellen**\n" + "\n".join(
@@ -170,7 +173,7 @@ class Agent:
         return res
 
     def handle(self, message: str, *, course_id: str | None = None, history: list[Turn] | None = None,
-               on_status: Callable[[str], None] | None = None) -> Answer:
+               on_status: Callable[[str], None] | None = None, images: list[str] | None = None) -> Answer:
         history = history or []
         status: list[str] = []
 
@@ -186,6 +189,11 @@ class Agent:
         if r.provider == "skill":
             if r.skill == "help":
                 return Answer(HELP, r)
+            if r.skill == "check":
+                from ..skills.check import run_check
+                rep = run_check(self, r.question, course_id=course.id, images=images, on_status=status.append)
+                return Answer(rep.render(course.name), r, provider=rep.grader, sources=rep.sources,
+                              status=list(status), prerendered=True)
             return Answer(f"`/{r.skill}` ist noch nicht gebaut (kommt in Phase 3–6).", r)
         if not r.question:
             return Answer("Bitte eine Frage eingeben.", r)
@@ -230,5 +238,7 @@ HELP = """**ETH-Agent – Befehle**
 - `@codex …` / `@claude …` – Modell erzwingen.
 - Verweise wie *Serie 4 Aufgabe 3*, *Prüfung Aug 2025 Aufgabe 4*, *Prüfung HS2022 Aufgabe 2* holen die Aufgabe
   und (falls vorhanden) die Musterlösung direkt aus dem Material.
-- Geplant: `/check`, `/repeat`, `/practice`, `/diagnose`, `/learn`, `/rewrite`.
+- `/check Serie 3 Aufgabe 1` und darunter dein Lösungsweg: Korrektur mit Punkteschätzung, erstem Fehler und
+  Hinweis. Eigene Aufgabe: Aufgabentext, dann eine Zeile `---`, dann dein Versuch. `--loesung` zeigt die Lösung.
+- Geplant: `/repeat`, `/practice`, `/diagnose`, `/learn`, `/rewrite`.
 """

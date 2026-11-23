@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 SKILLS = {"repeat", "check", "practice", "diagnose", "learn", "rewrite", "help"}
 _NAMED = re.compile(r"^\s*@(codex|gpt|chatgpt|claude)\b[:,]?\s*", re.I)
-_SKILL = re.compile(r"^\s*[/!]([a-zäöü]+)\b\s*", re.I)
+_SKILL = re.compile(r"^\s*[/!]([a-zäöü]+)\b[ \t]*", re.I)
 _HARD = re.compile(
     r"\b(aufgabe|serie|prüfung|pruefung|beweis|beweise|herleit\w*|zeige|berechne\w*|bestimme\w*|löse|loese|"
     r"exam|exercise|problem|derive|prove|show that|calculate|compute|solve|determine)\b", re.I)

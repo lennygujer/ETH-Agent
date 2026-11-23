@@ -11,7 +11,7 @@ Design und Entscheidungen: Projekt „Eigener Agent“ → `Agent Architecture v
 | 0 | Repo, Installationsskript, Konfiguration | ✅ |
 | 1 | Indexer + Suche (BM25, optional Embeddings), Musterlösung zu Aufgabe finden | ✅ erste Version |
 | 2 | `handle()`, Terminal-Chat, Codex/Claude-Aufruf, Prüfcode-Sandbox, Aufgaben-Verweise | ✅ erste Version |
-| 3 | `/check` mit Referenz-Herstellung | offen |
+| 3 | `/check` mit Referenz-Herstellung, Fehlerkatalog | ✅ erste Version |
 
 ## Installation (Server)
 
@@ -65,7 +65,27 @@ eth-agent chat --debug                           # zusätzlich Route, Dauer, Tok
 eth-agent ask "Prüfung Aug 2025 Aufgabe 4" --debug
 eth-agent ask "Erkläre den Tunneleffekt" --show-prompt   # zeigt den kompletten Prompt
 eth-agent usage                                  # Cloud-Aufrufe der letzten 5 h
+
+eth-agent check "Serie 3 Aufgabe 1" --attempt-file versuch.md
+eth-agent check "Prüfung Aug 2025 Aufgabe 2" --image foto1.jpg foto2.jpg --loesung
 ```
+
+Im Chat: `/check Serie 3 Aufgabe 1` eingeben, danach den Lösungsweg über mehrere Zeilen, Ende mit einer Zeile `.`
+(`bild: pfad.jpg` hängt ein Foto an). Eigene Aufgabe: `/check <Aufgabentext>`, Zeile `---`, dann der Versuch.
+
+### Wie `/check` korrigiert
+
+1. Aufgabe aus dem Material holen (oder eigener Aufgabentext).
+2. **Referenz:** Musterlösung, falls vorhanden. Sonst lösen Codex und Claude die Aufgabe unabhängig voneinander
+   (parallel), jeweils mit Prüfcode.
+3. **Bewertung** durch Claude (bei Fotos Codex): geschätzte Punkte, was richtig ist, erster Fehler mit Fehlerklasse
+   (Konzept, Ansatz, Algebra, Vorzeichen, Einheiten, …), kleinster Hinweis. Ein anderer korrekter Weg zählt als richtig.
+4. Deine **Endergebnisse** werden zusätzlich per Prüfcode nachgerechnet.
+5. **Vertrauensstufe** der Referenz: `Musterlösung`, `2 Modelle einig + Tool`, `2 Modelle einig (ohne Tool)`,
+   `1 Modell + Tool`, `unsicher`. Bei `unsicher` gibt es nur eine vorläufige Einschätzung.
+6. Jeder Fehler landet im Fehlerkatalog `data/profile/errors.jsonl` (Grundlage für `/practice` und Wiederholung).
+
+Kosten: mit Musterlösung 1 Cloud-Aufruf, ohne Musterlösung 3.
 
 ### Wie eine Antwort entsteht
 
@@ -95,6 +115,7 @@ src/eth_agent/
   llm/providers.py     codex exec / claude -p (Abo-Login), Fake für Tests
   llm/usage.py         Protokoll aller Cloud-Aufrufe
   checks/sandbox.py    Prüfcode ausführen
+  skills/check.py      /check: Referenz, Bewertung, Fehlerkatalog
 prompts/               Prompt-Vorlagen
 docs/indexer.md        Details und bekannte Grenzen
 ```
