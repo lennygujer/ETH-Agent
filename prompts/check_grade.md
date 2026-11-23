@@ -33,6 +33,26 @@ asserts the student's stated final values against them (relative tolerance 2e-2;
 Print one line per checked result, e.g. print("CHECK a) lambda: ok"). If the student gave no checkable final
 result, set it to an empty string. The code must fail (AssertionError) exactly when a student result is wrong.
 
+Learner map: the student's understanding of this course is tracked per topic. Using the attempt (including
+any reasoning the student wrote down and any stated confidence such as "Sicherheit: 80%"), report the 1-5
+concepts this attempt actually exercised:
+- Map each concept to an existing node of the map below if one fits (copy its id exactly). Otherwise give a
+  short new name (max. 6 words, course language) and the id of the best-fitting existing parent node.
+- outcome per concept: `correct`, `partial`, `wrong`, `misconception` (a systematic wrong belief, e.g. a wrong
+  rule applied confidently), or `slip` (the concept is understood, the execution had a careless error).
+- Stated high confidence on a wrong step points to `misconception`; a correct result with low confidence or
+  without visible reasoning is still `correct`, but say so in the evidence.
+- evidence: one sentence describing what the attempt shows about the student's understanding.
+
+Follow-up question ("probe"): ask exactly ONE question about the student's thinking, but only if the answer
+would change the diagnosis – e.g. the cause of an error is ambiguous (concept vs. slip), a correct result
+comes without visible reasoning (could be guessed or pattern-matched), or a key step was skipped. Ask about
+their reasoning ("Wie bist du auf … gekommen?", "Warum gilt hier …?"), never hint at the answer. Otherwise
+set probe to null. Do not ask if the attempt already shows the reasoning clearly.
+
+Current learner map of this course (id | title | status):
+{learner_map}
+
 Return ONLY one fenced ```json block with this structure (all text fields in {output_language_name},
 mathematics in LaTeX):
 
@@ -49,7 +69,10 @@ mathematics in LaTeX):
   "not_attempted": ["e.g. 'b)', 'c)'"],
   "hint": "smallest hint toward the fix",
   "feedback_markdown": "1-3 sentences, see rules",
-  "student_check_code": "python code as one string, or empty"
+  "student_check_code": "python code as one string, or empty",
+  "concepts": [{"node_id": "existing id or empty", "name": "concept name", "parent_id": "id of parent if new",
+                "outcome": "correct | partial | wrong | misconception | slip", "evidence": "one sentence"}],
+  "probe": {"question": "one question about the student's reasoning", "why": "what it would clarify"}
 }
 ```
 

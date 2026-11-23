@@ -88,6 +88,9 @@ class CheckReport:
     reveal: bool = False
     reveal_blocked: bool = False
     sources: list[ChunkRow] = field(default_factory=list)
+    map_updates: list[tuple[str, str]] = field(default_factory=list)   # (Titel, Status)
+    probe_id: int | None = None
+    probe_question: str | None = None
 
     def render(self, course_name: str) -> str:
         if not self.ok:
@@ -125,6 +128,14 @@ class CheckReport:
             out.append("*Lösung nicht angezeigt.*")
         else:
             out.append("*Lösung anzeigen: dieselbe Eingabe mit `--loesung` wiederholen.*")
+        if self.map_updates:
+            from ..learner.model import STATUS_ICON, STATUS_LABEL
+            out.append("**Lernkarte aktualisiert:** " + " · ".join(
+                f"{STATUS_ICON[st]} {t} ({STATUS_LABEL[st]})" for t, st in self.map_updates))
+        if self.probe_question:
+            out.append(f"### Rückfrage #{self.probe_id}\n{self.probe_question}\n\n"
+                       "*Antworte einfach in deiner nächsten Nachricht – je genauer du deinen Gedankengang "
+                       "beschreibst, desto genauer wird die Lernkarte. Überspringen: `/weiter`.*")
         if self.sources:
             out.append("---\n**Quellen**\n" + "\n".join(
                 f"[{i}] {c.citation(course_name)}" for i, c in enumerate(self.sources, 1)))
@@ -288,7 +299,11 @@ def run_check(agent: "Agent", text: str, *, course_id: str | None = None, images
         return CheckReport(label, False, "Kein Modell für die Bewertung verfügbar"
                            + (" (Bilder brauchen Codex)." if images else "."))
     attempt = inp.attempt or "(see attached image(s) of the student's handwritten work)"
+    from ..learner.model import parse_confidence
+    ensure_skeleton(agent, course.id)
+    confidence = parse_confidence(inp.attempt)
     grade_prompt = _fill(_template("check_grade.md"), course_name=course.name,
+                         learner_map=agent.learner.outline(course.id),
                          output_language_name=LANG_NAMES.get(course.output_language, course.output_language),
                          reference_status=ref_status, reference_note=ref_note, problem=problem,
                          reference=reference, attempt=attempt)
@@ -322,9 +337,39 @@ def run_check(agent: "Agent", text: str, *, course_id: str | None = None, images
     trust = trust_level(bool(official), solutions, grade.get("reference_agreement"))
     _log_error(agent, course.id, label, grade)
 
+    # 7. Lernkarte und Rückfrage (nur bei verlässlicher Referenz) -----------------
+    map_updates, probe_id, probe_q = [], None, None
+    if trust != "uncertain":
+        touched = agent.learner.apply_concepts(course.id, grade.get("concepts") or [], "check",
+                                               confidence=confidence, problem_ref=label)
+        by_id = {n.id: n for n in agent.learner.nodes(course.id)}
+        map_updates = [(by_id[t].title, by_id[t].own_status) for t in dict.fromkeys(touched) if t in by_id]
+        probe = grade.get("probe")
+        if isinstance(probe, dict) and str(probe.get("question") or "").strip():
+            probe_q = str(probe["question"]).strip()
+            fe = grade.get("first_error") or {}
+            ctx = (f"### Problem\n{problem[:3000]}\n\n### Student attempt\n{attempt[:3000]}\n\n"
+                   f"### Grading\nverdict: {grade.get('verdict')}; first error: {fe.get('description', '-')} "
+                   f"({fe.get('error_type', '-')}); probe purpose: {probe.get('why', '')}")
+            probe_id = agent.learner.open_probe(course.id, probe_q, ctx, touched, label)
+            say(f"Rückfrage #{probe_id} gestellt")
+
     blocked = False   # ganze Lösung gibt es immer auf ausdrücklichen Wunsch (--loesung)
     # Skript-Auszüge wurden nur den unabhängigen Lösern gegeben, nicht dem Bewerter bei Musterlösung.
     sources = problem_chunks[:1] + official[:1] + ([] if official else context_chunks)
     return CheckReport(label, True, trust=trust, grade=grade, grader=grader, student_check=student_check,
                        solutions=solutions, reference_text=reference, reveal=inp.reveal,
-                       reveal_blocked=blocked, sources=sources)
+                       reveal_blocked=blocked, sources=sources, map_updates=map_updates,
+                       probe_id=probe_id, probe_question=probe_q)
+
+
+def ensure_skeleton(agent: "Agent", course_id: str) -> int:
+    """Lernkarten-Gerüst aus den nummerierten Skript-Abschnitten anlegen (einmalig, danach billig)."""
+    have = agent.learner.db.execute("SELECT count(*) FROM nodes WHERE course=? AND origin='skript'",
+                                    (course_id,)).fetchone()[0]
+    if have:
+        return 0
+    rows = agent.store.db.execute(
+        "SELECT section FROM chunks WHERE course=? AND doc_type='skript' AND section IS NOT NULL "
+        "ORDER BY file_id, ord", (course_id,)).fetchall()
+    return agent.learner.build_skeleton(course_id, [r[0] for r in rows])

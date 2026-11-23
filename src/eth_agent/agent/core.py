@@ -42,6 +42,19 @@ def wants_full_solution(message: str) -> tuple[str, bool]:
     return message.strip(), full
 
 
+class _Status(list):
+    """Statuszeilen sammeln und sofort weiterreichen (Streaming)."""
+
+    def __init__(self, callback=None):
+        super().__init__()
+        self.callback = callback
+
+    def append(self, s):
+        super().append(s)
+        if self.callback:
+            self.callback(s)
+
+
 def slug_token(t: str) -> str:
     from ..config import slug
     return slug(t)
@@ -118,6 +131,8 @@ class Agent:
             "claude": ClaudeProvider(model=cfg.models.claude_model)}
         self.encode = encode
         self.embedding_model = embedding_model
+        from ..learner.model import LearnerStore
+        self.learner = LearnerStore(cfg.data_dir / "learner.sqlite")
 
     @property
     def names(self) -> dict[str, str]:
@@ -289,14 +304,16 @@ class Agent:
     def _handle(self, message: str, *, course_id: str | None, history: list[Turn] | None,
                 on_status: Callable[[str], None] | None, images: list[str] | None, holder: dict) -> Answer:
         history = history or []
-        status: list[str] = []
+        status = _Status(on_status)
 
-        class _Status(list):
-            def append(self, s):  # Status sofort weiterreichen (Streaming)
-                super().append(s)
-                if on_status:
-                    on_status(s)
-        status = _Status()
+        # Antwort auf eine Rückfrage? (letzte Agenten-Antwort enthielt "Rückfrage #n", keine neue /Anweisung)
+        from ..skills.probe import pending_probe, run_probe_answer
+        pid = pending_probe(history)
+        if pid is not None and message.strip() and not message.lstrip().startswith(("/", "!", "@")):
+            status = _Status(on_status)
+            text, cid = run_probe_answer(self, pid, message, status.append)
+            holder["course"] = self.cfg.courses.get(cid) if cid else None
+            return Answer(text, Route("PROBE", "probe", message), status=list(status), prerendered=True)
 
         course, message, early = self.select_course(message, history, course_id)
         holder["course"] = course
@@ -309,6 +326,16 @@ class Agent:
         if r.provider == "skill":
             if r.skill == "help":
                 return Answer(HELP, r)
+            if r.skill in {"lernkarte", "mindmap", "karte"}:
+                if not course.id:
+                    return Answer("Für die Lernkarte bitte zuerst ein Fach wählen, z. B. `/physik`. Alle Fächer: "
+                                  "`/kurse`.", r)
+                from ..learner.render import render_map
+                from ..skills.check import ensure_skeleton
+                ensure_skeleton(self, course.id)
+                return Answer(render_map(self.learner, course.id, course.name, r.question), r, prerendered=True)
+            if r.skill == "weiter":
+                return Answer("Rückfrage übersprungen.", r, prerendered=True)
             if r.skill == "check":
                 if not course.id:
                     return Answer("Für `/check` bitte zuerst ein Fach wählen, z. B. `/physik`. Alle Fächer: `/kurse`.",
@@ -372,5 +399,9 @@ HELP = """**ETH-Agent – Befehle**
   geht eine Stufe weiter. Die ganze Lösung mit `--loesung` am Ende oder `/loesung Serie 3 Aufgabe 1`.
 - **Fach wählen:** `/physik`, `/analysis`, `/sst` … (gilt für den ganzen Chat). `/kurse` zeigt alle Fächer und
   Kürzel, `/alle` sucht wieder in allen Fächern. Auch kombinierbar: `/physik Erkläre den Tunneleffekt`.
-- Geplant: `/repeat`, `/practice`, `/diagnose`, `/learn`, `/rewrite`.
+- **Lernkarte:** `/lernkarte` zeigt pro Fach, welche Themen sitzen, wackeln oder fehlen (wird mit jedem `/check`
+  genauer). `/lernkarte voll` oder `/lernkarte <thema>` für Details. Stellt der Agent eine **Rückfrage** zu
+  deinem Gedankengang, antworte einfach in der nächsten Nachricht (`/weiter` überspringt).
+- Tipp für `/check`: Gedankengang mitschreiben und `Sicherheit: 70%` angeben – beides macht die Karte genauer.
+- Geplant: `/practice`, `/diagnose`, `/learn`.
 """

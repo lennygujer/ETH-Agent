@@ -8,6 +8,7 @@ Vision-Umwandlung dazu (siehe docs/indexer.md).
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -61,7 +62,8 @@ class PdfDoc:
 
 
 def _norm(s: str) -> str:
-    return re.sub(r"\s+", " ", s).strip()
+    # NFKC: PDF-Ligaturen (ﬁ, ﬀ) zu normalen Buchstaben, damit Suche und Titel stimmen
+    return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", s)).strip()
 
 
 def _raw_lines(page: pymupdf.Page) -> list[Line]:

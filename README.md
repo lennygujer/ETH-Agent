@@ -44,6 +44,21 @@ Der Agent erkennt jedes Fach im gespiegelten OneDrive-Ordner (`material/<Semeste
 
 Eigene Kürzel: `course_aliases` in `config.yaml`.
 
+## Lernkarte
+
+Pro Fach führt der Agent eine Lernkarte: das Gerüst aus den Skript-Kapiteln, ergänzt um die Konzepte aus deinen
+Korrekturen. Jedes `/check` trägt ein, welche Konzepte die Aufgabe geprüft hat und mit welchem Ergebnis
+(richtig, teilweise, falsch, Fehlvorstellung, Flüchtigkeitsfehler). Deine Sicherheit (`Sicherheit: 70%`) und dein
+aufgeschriebener Gedankengang fliessen ein. Ist die Ursache eines Fehlers unklar, stellt der Agent eine
+**Rückfrage** zu deinem Gedankengang; deine Antwort wird ausgewertet und präzisiert die Karte (`/weiter` überspringt).
+
+- `/lernkarte` – Mindmap mit Status (✅ sitzt · 🟢 vermutlich ok · 🟡 wackelt · 🔴 fehlt · ⚠️ Fehlvorstellung · ⚪ ungeprüft)
+  und Liste „Das solltest du noch lernen“
+- `/lernkarte voll`, `/lernkarte <thema>`
+
+Belege werden nur angehängt, nie überschrieben (`data/learner.sqlite`); der Status wird daraus berechnet
+(neuere Belege zählen mehr, eine Fehlvorstellung gilt erst nach zwei richtigen Antworten als behoben).
+
 ## OneDrive-Sync
 
 Siehe `docs/sync.md`: entweder holt der Server den ETH-Ordner direkt aus OneDrive (rclone, alle 3 h),
@@ -143,7 +158,9 @@ src/eth_agent/
   llm/providers.py     codex exec / claude -p (Abo-Login), Fake für Tests
   llm/usage.py         Protokoll aller Cloud-Aufrufe
   checks/sandbox.py    Prüfcode ausführen
-  skills/check.py      /check: Referenz, Bewertung, Fehlerkatalog
+  skills/check.py      /check: Referenz, Bewertung, Fehlerkatalog, Lernkarte, Rückfrage
+  skills/probe.py      Antwort auf Rückfragen auswerten
+  learner/             Lernkarte: Knoten, Belege, Status, Mindmap
   server.py            OpenAI-kompatibler Server für Open WebUI (Streaming, Bilder, Hilfsanfragen)
 deploy/                systemd-Dienst
 scripts/               setup_service.sh, fix_zip_names.py
