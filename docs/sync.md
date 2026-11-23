@@ -12,7 +12,7 @@ wird, landet 30 Tage in `~/eth-agent/material-trash/`.
 > hochgeladene Ordner `material/Physik 2` und `Physik 2.zip` werden dabei in den Papierkorb verschoben
 > und durch `material/HS26/Physik 2` ersetzt. Der Index bleibt gültig (gleiche Dateien, gleiche Kurs-ID).
 
-## Variante A – Server holt direkt aus OneDrive (empfohlen, falls die ETH es erlaubt)
+## Variante A – Server holt direkt aus OneDrive (von der ETH blockiert)
 
 Vorteil: läuft alle 3 Stunden automatisch, egal ob Mac oder PC an sind.
 
@@ -49,31 +49,30 @@ Vorteil: läuft alle 3 Stunden automatisch, egal ob Mac oder PC an sind.
    journalctl --user -u eth-agent-sync -f       # Fortschritt
    ```
 
-## Variante B – Windows-PC schiebt auf den Server
+## Variante B – Windows-PC schiebt auf den Server (aktiv)
 
-Vorteil: braucht keine ETH-Freigabe. Nachteil: aktualisiert nur, wenn der PC läuft.
+Die ETH erlaubt rclone keinen direkten OneDrive-Zugriff (Admin-Freigabe nötig, getestet 2026-11-23).
+Darum spiegelt der Windows-PC seinen lokalen OneDrive-Ordner per SFTP. Läuft nur, wenn der PC an ist.
 
-1. **SSH-Schlüssel ohne Passwort** auf dem PC erzeugen (bei der Passwortfrage zweimal nur Enter drücken,
-   damit die geplante Aufgabe ohne Eingabe laufen kann) und auf den Server kopieren (PowerShell):
+1. rclone nach `C:\Tools\rclone\rclone.exe` legen.
+2. SSH-Schlüssel ohne Passwort erzeugen (bei der Passwortfrage zweimal Enter) und auf den Server kopieren:
    ```powershell
    ssh-keygen -t ed25519 -f $env:USERPROFILE\.ssh\eth_agent
-   type $env:USERPROFILE\.ssh\eth_agent.pub | ssh gujerl@100.83.134.66 "cat >> ~/.ssh/authorized_keys"
+   type $env:USERPROFILE\.ssh\eth_agent.pub | ssh gujerl@100.83.134.66 "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
+   ssh -i $env:USERPROFILE\.ssh\eth_agent gujerl@100.83.134.66 "echo ok"
    ```
-2. rclone wie oben nach `C:\Tools\rclone\` entpacken und das Ziel anlegen:
+3. rclone-Ziel anlegen und testen:
    ```powershell
    C:\Tools\rclone\rclone.exe config create server sftp host 100.83.134.66 user gujerl key_file "$env:USERPROFILE\.ssh\eth_agent"
-   C:\Tools\rclone\rclone.exe lsd server:eth-agent      # sollte material, data, app zeigen
+   C:\Tools\rclone\rclone.exe lsd server:eth-agent
    ```
-3. Das Repo-Skript `scripts/sync_windows.ps1` auf den PC kopieren (z. B. nach `C:\Tools\eth-agent\scripts\`,
-   zusammen mit `deploy\rclone-excludes.txt` in `C:\Tools\eth-agent\deploy\`) und einmal von Hand starten:
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File C:\Tools\eth-agent\scripts\sync_windows.ps1
-   ```
-4. In der **Aufgabenplanung** eine Aufgabe anlegen: Trigger „Bei Anmeldung“ und „Täglich, alle 3 Stunden wiederholen“,
-   Aktion `powershell.exe` mit Argumenten `-ExecutionPolicy Bypass -WindowStyle Hidden -File C:\Tools\eth-agent\scripts\sync_windows.ps1`.
+4. `scripts/sync_windows.ps1` als `C:\Tools\eth-agent\sync_windows.ps1` speichern, zuerst als Trockenlauf
+   (`-DryRun`), dann echt ausführen.
+5. Aufgabenplanung: Trigger „Bei Anmeldung“ + „Täglich, alle 3 Stunden wiederholen“, Aktion `powershell.exe`,
+   Argumente `-ExecutionPolicy Bypass -WindowStyle Hidden -File C:\Tools\eth-agent\sync_windows.ps1`.
 
-Hinweis: Dateien, die in OneDrive nur online liegen, lädt Windows beim Kopieren automatisch herunter. Am
-einfachsten den Ordner `ETH` auf „Immer auf diesem Gerät behalten“ stellen.
+Dateien, die in OneDrive nur online liegen, lädt Windows beim Kopieren herunter. Am einfachsten den Ordner
+`ETH` auf „Immer auf diesem Gerät behalten“ stellen.
 
 ## Variante C – Mac
 
