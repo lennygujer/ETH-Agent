@@ -101,7 +101,8 @@ FROM chunks c JOIN files f ON f.id = c.file_id
 class Store:
     def __init__(self, db_path: Path):
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(db_path)
+        # Server: Anfragen laufen in Worker-Threads (seriell, siehe server.py)
+        self.db = sqlite3.connect(db_path, check_same_thread=False)
         self.db.execute("PRAGMA foreign_keys = ON")
         self.db.execute("PRAGMA journal_mode = WAL")
         self.db.executescript(SCHEMA)

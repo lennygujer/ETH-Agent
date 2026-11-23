@@ -1,0 +1,17 @@
+[Unit]
+Description=ETH-Agent (OpenAI-kompatibler Server für Open WebUI)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/eth-agent/app
+EnvironmentFile=%h/eth-agent/app/.env
+# codex liegt in /usr/local/bin, claude in ~/.local/bin
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/eth-agent/app/.venv/bin/eth-agent serve --host ${ETH_AGENT_HOST} --port ${ETH_AGENT_PORT}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -216,6 +216,22 @@ def cmd_check(cfg, args) -> int:
     return 0
 
 
+def cmd_serve(cfg, args) -> int:
+    import uvicorn
+
+    from .server import api_key_from_env, create_app
+
+    key = api_key_from_env(cfg)
+    if not key:
+        print("! Kein ETH_AGENT_API_KEY gesetzt (Umgebung oder .env) – Server läuft OHNE Schlüssel.",
+              file=sys.stderr)
+    agent = _agent(cfg, args.keyword_only)
+    app = create_app(cfg, agent, key)
+    print(f"ETH-Agent hört auf http://{args.host}:{args.port}/v1", file=sys.stderr)
+    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+    return 0
+
+
 def cmd_usage(cfg, args) -> int:
     from .llm.usage import UsageLog
 
@@ -273,13 +289,19 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--debug", action="store_true")
     s.add_argument("--keyword-only", action="store_true")
 
+    s = sub.add_parser("serve", help="OpenAI-kompatiblen Server für Open WebUI starten")
+    s.add_argument("--host", default="127.0.0.1",
+                   help="127.0.0.1 = nur lokal; 0.0.0.0 = auch für Docker/Tailscale erreichbar")
+    s.add_argument("--port", type=int, default=8000)
+    s.add_argument("--keyword-only", action="store_true")
+
     s = sub.add_parser("usage", help="Cloud-Aufrufe und Tokens anzeigen")
     s.add_argument("--hours", type=int, default=5)
 
     args = p.parse_args(argv)
     cfg = load_config(args.config)
     handler = {"index": cmd_index, "search": cmd_search, "show": cmd_show, "files": cmd_files,
-               "chat": cmd_chat, "ask": cmd_ask, "check": cmd_check, "usage": cmd_usage}[args.cmd]
+               "chat": cmd_chat, "ask": cmd_ask, "check": cmd_check, "serve": cmd_serve, "usage": cmd_usage}[args.cmd]
     return handler(cfg, args)
 
 

@@ -12,6 +12,7 @@ Design und Entscheidungen: Projekt „Eigener Agent“ → `Agent Architecture v
 | 1 | Indexer + Suche (BM25, optional Embeddings), Musterlösung zu Aufgabe finden | ✅ erste Version |
 | 2 | `handle()`, Terminal-Chat, Codex/Claude-Aufruf, Prüfcode-Sandbox, Aufgaben-Verweise | ✅ erste Version |
 | 3 | `/check` mit Referenz-Herstellung, Fehlerkatalog | ✅ erste Version |
+| 7 (vorgezogen) | Server für Open WebUI, Dienst mit Autostart | ✅ erste Version |
 
 ## Installation (Server)
 
@@ -21,6 +22,15 @@ cd ~/eth-agent/app
 ./install.sh              # mit Embeddings (CPU)
 # EMBED=0 ./install.sh    # nur Stichwortsuche
 ```
+
+## Open WebUI
+
+```bash
+ETH_AGENT_HOST=127.0.0.1 ./scripts/setup_service.sh   # 172.17.0.1, falls Open WebUI in Docker (Bridge) läuft
+```
+
+Danach in Open WebUI eine OpenAI-Verbindung mit `http://<host>:8000/v1` und dem angezeigten Schlüssel anlegen.
+Details: `docs/open-webui.md`.
 
 ## Material bereitstellen
 
@@ -116,6 +126,9 @@ src/eth_agent/
   llm/usage.py         Protokoll aller Cloud-Aufrufe
   checks/sandbox.py    Prüfcode ausführen
   skills/check.py      /check: Referenz, Bewertung, Fehlerkatalog
+  server.py            OpenAI-kompatibler Server für Open WebUI (Streaming, Bilder, Hilfsanfragen)
+deploy/                systemd-Dienst
+scripts/               setup_service.sh, fix_zip_names.py
 prompts/               Prompt-Vorlagen
 docs/indexer.md        Details und bekannte Grenzen
 ```

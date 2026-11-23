@@ -15,12 +15,15 @@ dependencies = [
     "sympy>=1.12",
     "scipy>=1.11",
     "pint>=0.23",
+    # Server für Open WebUI
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
 ]
 
 [project.optional-dependencies]
 # Embeddings auf dem Server (CPU). Ohne dieses Extra läuft die Suche nur über Stichworte (BM25).
 embed = ["sentence-transformers>=3"]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "httpx>=0.27"]
 
 [project.scripts]
 eth-agent = "eth_agent.cli:main"
