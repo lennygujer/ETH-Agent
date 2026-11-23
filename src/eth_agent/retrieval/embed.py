@@ -25,7 +25,11 @@ def _prefix(model: str, kind: str) -> str:
 def _load(model: str):
     if model not in _MODELS:
         from sentence_transformers import SentenceTransformer
-        _MODELS[model] = SentenceTransformer(model, device="cpu")
+        m = SentenceTransformer(model, device="cpu")
+        # bge-m3 erlaubt bis 8192 Tokens; der Aufwand wächst quadratisch. Für die Suche reichen
+        # die ersten 1024 Tokens eines Chunks (Überschrift + Aufgabenstellung) völlig.
+        m.max_seq_length = min(m.max_seq_length or 1024, 1024)
+        _MODELS[model] = m
     return _MODELS[model]
 
 
