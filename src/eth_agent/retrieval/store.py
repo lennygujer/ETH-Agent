@@ -174,10 +174,14 @@ class Store:
         if not sol_type:
             return []
         # Lösungen haben oft zusätzliche Unterüberschriften (2.2 -> 2.2.1, 2.2.2): mitnehmen.
+        return self.problem_chunks(chunk.course, chunk.pair_key, sol_type, chunk.problem_no)
+
+    def problem_chunks(self, course: str, pair: str, doc_type: str, problem_no: str) -> list[ChunkRow]:
+        """Alle Chunks einer Aufgabe (inkl. Unteraufgaben 2 -> 2.1, 2.2) in einer Datei."""
         rows = self.db.execute(
             _CHUNK_SELECT + " WHERE f.course=? AND f.pair_key=? AND c.doc_type=?"
             " AND (c.problem_no=? OR c.problem_no LIKE ?) ORDER BY c.ord",
-            (chunk.course, chunk.pair_key, sol_type, chunk.problem_no, chunk.problem_no + ".%"))
+            (course, pair, doc_type, problem_no, problem_no + ".%"))
         return [ChunkRow(*r) for r in rows]
 
     def files(self, course: str | None = None) -> list[sqlite3.Row]:

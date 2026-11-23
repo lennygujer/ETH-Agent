@@ -113,6 +113,78 @@ def cmd_files(cfg, args) -> int:
     return 0
 
 
+def _agent(cfg, keyword_only: bool = False):
+    from .agent.core import Agent
+
+    model, enc = (None, None) if keyword_only else _encoder(cfg)
+    if model:
+        print(f"(lade Embedding-Modell {model} …)", file=sys.stderr)
+        enc("warmup")
+    return Agent(cfg, encode=enc, embedding_model=model)
+
+
+def _print_answer(cfg, ans, course_id, debug: bool) -> None:
+    course = cfg.courses[course_id] if course_id else next(iter(cfg.courses.values()))
+    if debug:
+        print(f"\n[Route {ans.route.rule} -> {ans.route.provider}"
+              + (f", Verweis: {ans.reference}" if ans.reference else "") + "]")
+        if ans.llm:
+            print(f"[{ans.llm.provider}: {ans.llm.duration_s:.1f}s, in={ans.llm.input_tokens}, "
+                  f"out={ans.llm.output_tokens}]")
+        if ans.check.status != "none":
+            print("[Prüfcode-Ausgabe]\n" + textwrap.indent(ans.check.output or "(leer)", "  "))
+    print("\n" + "─" * 70)
+    print(ans.render(course.name))
+    print("─" * 70)
+
+
+def cmd_ask(cfg, args) -> int:
+    agent = _agent(cfg, args.keyword_only)
+    ans = agent.handle(args.message, course_id=args.course,
+                       on_status=lambda s: print(f"· {s}", file=sys.stderr))
+    if args.show_prompt and ans.prompt:
+        print("=" * 70 + "\nPROMPT\n" + "=" * 70 + "\n" + ans.prompt)
+    _print_answer(cfg, ans, args.course, args.debug)
+    return 0 if ans.llm is None or ans.llm.ok else 1
+
+
+def cmd_chat(cfg, args) -> int:
+    from .agent.core import Turn
+
+    agent = _agent(cfg, args.keyword_only)
+    history: list[Turn] = []
+    print("ETH-Agent – Terminal-Chat. /help für Befehle, /neu für neues Gespräch, /exit zum Beenden.")
+    while True:
+        try:
+            msg = input("\nDu> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return 0
+        if not msg:
+            continue
+        if msg in {"/exit", "/quit", "exit"}:
+            return 0
+        if msg in {"/neu", "/new", "/reset"}:
+            history.clear()
+            print("(neues Gespräch)")
+            continue
+        ans = agent.handle(msg, course_id=args.course, history=history,
+                           on_status=lambda s: print(f"· {s}"))
+        _print_answer(cfg, ans, args.course, args.debug)
+        history += [Turn("user", msg), Turn("assistant", ans.text)]
+
+
+def cmd_usage(cfg, args) -> int:
+    from .llm.usage import UsageLog
+
+    rows = UsageLog(cfg.data_dir / "usage.sqlite").summary(args.hours)
+    print(f"Cloud-Aufrufe der letzten {args.hours} h")
+    print(f"{'Modell':8s} {'Aufrufe':>7s} {'ok':>4s} {'Limit':>5s} {'Tokens in':>10s} {'Tokens out':>10s} {'USD':>7s}")
+    for prov, n, ok, rl, tin, tout, usd in rows:
+        print(f"{prov:8s} {n:>7d} {ok or 0:>4d} {rl or 0:>5d} {tin or 0:>10d} {tout or 0:>10d} {usd or 0:>7.3f}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     if hasattr(signal, "SIGPIPE"):  # sauber beenden bei `| head`
         signal.signal(signal.SIGPIPE, signal.SIG_DFL)
@@ -140,9 +212,22 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("files", help="indexierte Dateien auflisten")
     s.add_argument("--course")
 
+    for name, hlp in (("chat", "Terminal-Chat mit dem Agenten"), ("ask", "eine einzelne Frage stellen")):
+        s = sub.add_parser(name, help=hlp)
+        if name == "ask":
+            s.add_argument("message")
+            s.add_argument("--show-prompt", action="store_true", help="vollständigen Prompt anzeigen")
+        s.add_argument("--course")
+        s.add_argument("--debug", action="store_true", help="Route, Dauer, Tokens, Prüfcode-Ausgabe zeigen")
+        s.add_argument("--keyword-only", action="store_true", help="ohne Embeddings (schneller Start)")
+
+    s = sub.add_parser("usage", help="Cloud-Aufrufe und Tokens anzeigen")
+    s.add_argument("--hours", type=int, default=5)
+
     args = p.parse_args(argv)
     cfg = load_config(args.config)
-    handler = {"index": cmd_index, "search": cmd_search, "show": cmd_show, "files": cmd_files}[args.cmd]
+    handler = {"index": cmd_index, "search": cmd_search, "show": cmd_show, "files": cmd_files,
+               "chat": cmd_chat, "ask": cmd_ask, "usage": cmd_usage}[args.cmd]
     return handler(cfg, args)
 
 

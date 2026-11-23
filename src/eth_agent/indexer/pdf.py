@@ -104,7 +104,8 @@ def _printed_pages(pages: list[list[Line]]) -> list[str | None]:
     for lines in pages:
         num = None
         for cand in (lines[-1:] + lines[:1]):
-            if _PAGE_NUM.match(cand.text):
+            # fette Zahl oben ist eher eine Aufgabennummer als eine Seitenzahl
+            if _PAGE_NUM.match(cand.text) and not cand.bold:
                 num = int(cand.text)
                 break
         detected.append(num)

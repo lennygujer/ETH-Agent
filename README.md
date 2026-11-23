@@ -10,7 +10,7 @@ Design und Entscheidungen: Projekt „Eigener Agent“ → `Agent Architecture v
 |---|---|---|
 | 0 | Repo, Installationsskript, Konfiguration | ✅ |
 | 1 | Indexer + Suche (BM25, optional Embeddings), Musterlösung zu Aufgabe finden | ✅ erste Version |
-| 2 | `handle()`, Terminal-Chat, Codex-Aufruf, Tool-Checks | offen |
+| 2 | `handle()`, Terminal-Chat, Codex/Claude-Aufruf, Prüfcode-Sandbox, Aufgaben-Verweise | ✅ erste Version |
 | 3 | `/check` mit Referenz-Herstellung | offen |
 
 ## Installation (Server)
@@ -59,7 +59,23 @@ eth-agent files                                  # was ist im Index, was fehlt (
 eth-agent search "hydrogen atom expectation value radius"
 eth-agent search "spin measurement" --type pruefung -k 3
 eth-agent show 606 --solution                    # Aufgabe + zugehörige Musterlösung
+
+eth-agent chat                                   # Terminal-Chat (lädt beim Start das Embedding-Modell)
+eth-agent chat --debug                           # zusätzlich Route, Dauer, Tokens, Prüfcode-Ausgabe
+eth-agent ask "Prüfung Aug 2025 Aufgabe 4" --debug
+eth-agent ask "Erkläre den Tunneleffekt" --show-prompt   # zeigt den kompletten Prompt
+eth-agent usage                                  # Cloud-Aufrufe der letzten 5 h
 ```
+
+### Wie eine Antwort entsteht
+
+1. **Routing** (`agent/routing.py`): `@codex`/`@claude` erzwingt ein Modell, `/befehl` ist ein Skill, sehr lange Texte gehen an Claude, sonst Codex. Fällt Codex aus (Limit, Fehler), übernimmt Claude, ausser das Modell wurde ausdrücklich gewählt.
+2. **Verweise** (`agent/references.py`): *Serie 3 Aufgabe 1*, *Prüfung Aug 2025 Aufgabe 4*, *Prüfung HS2022 Aufgabe 2*, *Mock Exam 2 Aufgabe 1* holen die Aufgabe und die Musterlösung exakt aus dem Index.
+3. **Suche**: weiteres Material (Skript, Übungsstunden, ähnliche Prüfungsaufgaben), maximal ~12 000 Tokens.
+4. **Prompt** aus `prompts/answer.md`: Frage wörtlich, Material mit Zitat-Labels, Lösungsregel (Serien im Modus `tutor` nur Hinweise).
+5. **Prüfcode**: Das Modell hängt einen ```` ```python check ```` -Block an, der die Ergebnisse unabhängig nachrechnet. Er läuft in einer Sandbox (eigener Prozess, Zeit-/Speicherlimit, wenn möglich ohne Netz). Ergebnis als Badge: `Tool ✓`, `Tool ✗`, `ungeprüft`. Der Prüfcode stammt in Phase 2 noch vom selben Modell; ab Phase 3 schreibt ihn das andere Modell.
+
+`serien_mode` pro Kurs in `config.yaml`: `tutor` (Standard, für Serien mit Bonus/Testat) oder `full`.
 
 ## Aufbau
 
@@ -73,6 +89,13 @@ src/eth_agent/
   indexer/build.py     inkrementelle Indexierung, Embeddings
   retrieval/store.py   SQLite + FTS5 + Vektoren
   retrieval/search.py  hybride Suche (gewichtete RRF)
+  agent/routing.py     Regeln R1–R8
+  agent/references.py  "Serie 3 Aufgabe 1" -> exakter Chunk
+  agent/core.py        handle(): Material, Prompt, Modell, Prüfcode, Antwort
+  llm/providers.py     codex exec / claude -p (Abo-Login), Fake für Tests
+  llm/usage.py         Protokoll aller Cloud-Aufrufe
+  checks/sandbox.py    Prüfcode ausführen
+prompts/               Prompt-Vorlagen
 docs/indexer.md        Details und bekannte Grenzen
 ```
 

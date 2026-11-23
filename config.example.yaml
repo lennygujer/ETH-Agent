@@ -14,6 +14,9 @@ courses:
     output_language: de
     # Hauptskript für Notation und Zitate
     notation_source: "Sheets/script_phys_II.pdf"
+    # tutor = bei Serien nur Hinweise statt Komplettlösung (für Serien mit Bonus/Testat)
+    # full  = vollständige Lösungen
+    serien_mode: tutor
 
 # Zuordnung Unterordner -> Dokumenttyp (Gross-/Kleinschreibung egal).
 # Dateinamen mit "exam"/"pruefung"/"prüfung" werden immer als Prüfung erkannt,

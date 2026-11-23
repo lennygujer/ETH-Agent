@@ -18,6 +18,8 @@ class Course:
     name: str
     output_language: str = "de"
     notation_source: str | None = None
+    # tutor = bei Serien nur Hinweise (für Bonus/Testat-Serien), full = vollständige Lösungen
+    serien_mode: str = "tutor"
 
 
 @dataclass
