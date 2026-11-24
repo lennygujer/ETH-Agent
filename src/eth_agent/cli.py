@@ -310,6 +310,15 @@ def main(argv: list[str] | None = None) -> int:
 
     args = p.parse_args(argv)
     cfg = load_config(args.config)
+    if getattr(args, "course", None):
+        course = cfg.resolve_course(args.course)
+        if course is None:
+            ids = ", ".join(sorted(cfg.courses))
+            print(f"Unbekanntes Fach «{args.course}». Verfügbare IDs: {ids}", file=sys.stderr)
+            return 2
+        if course.id != args.course:
+            print(f"(Fach: {course.name} → --course {course.id})", file=sys.stderr)
+        args.course = course.id
     handler = {"index": cmd_index, "search": cmd_search, "show": cmd_show, "files": cmd_files,
                "chat": cmd_chat, "ask": cmd_ask, "check": cmd_check, "serve": cmd_serve, "usage": cmd_usage}[args.cmd]
     return handler(cfg, args)
