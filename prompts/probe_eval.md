@@ -21,7 +21,7 @@ LaTeX. No praise.
 
 Update the learner map with 1-3 concepts (same rules as before: reuse an existing node id if one fits, else a
 short new name and a parent id; outcome `correct`, `partial`, `wrong`, `misconception` or `slip`; one
-sentence of evidence in terms of what the student said).
+sentence of evidence in terms of what the student said, in {output_language_name}, addressed to the student as "du").
 
 Return ONLY one fenced ```json block:
 

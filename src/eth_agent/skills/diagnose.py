@@ -29,9 +29,10 @@ DIAG_MARK = re.compile(r"Diagnose #(\d+) · Frage (\d+)")
 DEFAULT_Q = 8
 MIN_Q, MAX_Q = 3, 15
 MAX_FOCUS = 40
-MATERIAL_TYPES = ["skript", "slides", "formelsammlung", "notizen", "uebungsstunde", "buch"]
+MATERIAL_TYPES = ["skript", "slides", "notizen", "uebungsstunde", "buch"]
+SHEET_TYPES = ["formelsammlung"]
 EXAM_TYPES = ["pruefung"]
-MATERIAL_BUDGET, EXAM_BUDGET = 6_000, 3_000      # Tokens
+MATERIAL_BUDGET, SHEET_BUDGET, EXAM_BUDGET = 6_000, 2_500, 3_000      # Tokens
 _DONT_KNOW = re.compile(r"^\s*(ich\s+)?(wei(ss|ß)\s+(ich\s+)?(es\s+)?nicht|keine\s+ahnung|k\.?\s?a\.?$|"
                         r"(i\s+)?don'?t\s+know|\?+$)", re.I)
 _COUNT = re.compile(r"(?:^|\s)(?:--n\s*)?(\d{1,2})\s*(fragen|questions|q)?\s*$", re.I)
@@ -120,7 +121,7 @@ def _focus_text(focus: list[Node], topic: str) -> str:
 
 
 def _gather(agent: "Agent", course_id: str, course_name: str, focus: list[Node], topic: str
-            ) -> tuple[str, str]:
+            ) -> tuple[str, str, str]:
     """Kursmaterial und Prüfungsauszüge einmal suchen (wird für die ganze Diagnose gespeichert)."""
     from ..agent.core import _format_chunk
     from ..agent.routing import est_tokens
@@ -153,8 +154,11 @@ def _gather(agent: "Agent", course_id: str, course_name: str, focus: list[Node],
         return "\n\n".join(parts)
 
     material = collect([run(q, MATERIAL_TYPES, 2) for q in queries], MATERIAL_BUDGET)
+    sheet = collect([run(q, SHEET_TYPES, 2) for q in queries], SHEET_BUDGET)
     exam = collect([run(" ".join(queries[:3]), EXAM_TYPES, 3)], EXAM_BUDGET)
-    return material or "(no matching course material found)", exam or "(no exam material found)"
+    return (material or "(no matching course material found)",
+            sheet or "(no formula sheet in the course material – assume formulas must be known)",
+            exam or "(no exam material found)")
 
 
 def _transcript(items: list[dict]) -> str:
@@ -192,6 +196,7 @@ def _ask(agent: "Agent", course: "Course", diag: dict, items: list[dict], budget
                    output_language_name=LANG_NAMES.get(course.output_language, course.output_language),
                    budget_left=str(max(0, budget_left)), focus=diag["focus"] or "",
                    learner_map=agent.learner.outline(course.id), context=ctx.get("material", ""),
+                   formula_sheet=ctx.get("sheet", "(not available)"),
                    exam_context=ctx.get("exam", ""), transcript=_transcript(items))
     order = [n for n in ("codex", "claude") if n in agent.providers and agent.providers[n].available()]
     for name in order:
@@ -225,8 +230,10 @@ def _valid_next(data: dict) -> dict | None:
 
 def _render_question(agent: "Agent", course_id: str, diag_id: int, n: int, max_q: int, q: dict) -> str:
     by_id = {x.id: x for x in agent.learner.nodes(course_id)}
-    topics = [by_id[i].title for i in q["node_ids"] if i in by_id]
-    head = f"### Diagnose · Frage {n}/{max_q}" + (f" — {', '.join(topics[:2])}" if topics else "")
+    nodes = [by_id[i] for i in q["node_ids"] if i in by_id]
+    ids = {x.id for x in nodes}
+    specific = [x.title for x in nodes if not any(c.id in ids for c in x.children)]   # Eltern weglassen
+    head = f"### Diagnose · Frage {n}/{max_q}" + (f" — {' · '.join(specific[:2])}" if specific else "")
     parts = [head, q["question"]]
     if q["options"]:
         parts.append("\n".join(f"- {o}" for o in q["options"]))
@@ -264,9 +271,10 @@ def start(agent: "Agent", course: "Course", arg: str, say: Callable[[str], None]
     focus = focus_nodes(agent, course.id, topic)
     say(f"Diagnose {('zu «' + topic + '»') if topic else 'über das ganze Fach'}: {len(focus)} Themen im Fokus")
     say("Suche Skript und Prüfungsaufgaben …")
-    material, exam = _gather(agent, course.id, course.name, focus, topic)
+    material, sheet, exam = _gather(agent, course.id, course.name, focus, topic)
     did = agent.learner.open_diagnosis(course.id, topic, max_q, _focus_text(focus, topic),
-                                       json.dumps({"material": material, "exam": exam}, ensure_ascii=False))
+                                       json.dumps({"material": material, "sheet": sheet, "exam": exam},
+                                                  ensure_ascii=False))
     diag = agent.learner.get_diagnosis(did)
     data = _ask(agent, course, diag, [], max_q, say)
     q = _valid_next(data) if data else None

@@ -9,11 +9,18 @@ How to ask:
   concrete question where different mental models lead to different predictions, explanations or choices.
   A single good question can test several strands. No trivia, no long calculations, no elaborate setups.
 - Use the notation of the course material below. Aim at what the exam needs (see the exam excerpts).
+- Measure understanding, not memorisation. In the exam the student has the formula sheet below. If a question
+  needs a relation that is on the formula sheet, state it in the question. If it is not on the sheet, do not
+  give it in the first question on that strand – knowing it is part of the exam.
+- Write only the question (and options). Do not add instructions on how to answer or a request for confidence –
+  the app adds those.
 - Formats: `mc` (3-4 options; wrong options must be plausible and each correspond to a typical misconception)
   or `short` (one sentence, a formula, a sketch described in words, or a small estimate).
 - Bracket the edge like a binary search: start near exam level for a strand. A well-reasoned correct answer
-  justifies moving to the next strand or a harder question; a miss means narrowing toward what the student can
-  still reason through – but only if the distinction matters, otherwise move on to a more important strand.
+  justifies moving to the next strand or a harder question. After a miss or "weiss nicht" on a strand, ask ONE
+  easier question on the same strand before leaving it: give the needed formula or definition and ask for a
+  qualitative consequence. This separates "cannot recall the formula" from "does not understand the concept" –
+  the most useful single finding. If the easier question is also missed, the strand is a real gap: move on.
 - Spread over the strands listed under "Focus"; prefer untested (⚪) and weak strands; skip strands already
   shown to be solid.
 
@@ -22,10 +29,13 @@ How to evaluate an answer:
   sound reasoning.
 - Confidence (0-100 %): confident and wrong → likely `misconception`; correct but low confidence → still
   `correct`, but say it is fragile; "weiss nicht" / "keine Ahnung" is a genuine gap (`wrong`), not a misconception.
-- feedback: 1-2 sentences in {output_language_name}: whether it was right, and the correct answer in one short
-  sentence if it was wrong. No lecture.
+- If the student says they do not remember the formula but reasons qualitatively, judge the reasoning; record
+  the missing formula in the evidence ("Formel für … nicht parat").
+- feedback: 1-2 sentences in {output_language_name}, addressed as "du": whether it was right, and the correct
+  answer with the one key reason if it was wrong. For "weiss nicht" just give the answer and reason – it was an
+  answer, not a skipped question. No lecture.
 - concepts: 1-3 map nodes with outcome `correct | partial | wrong | misconception | slip` and one sentence of
-  evidence in terms of what the student said. Reuse an existing node id if one fits (copy it exactly), else a
+  evidence (max. ~25 words, in {output_language_name}, addressed as "du") in terms of what the student said. Reuse an existing node id if one fits (copy it exactly), else a
   short new name with the best parent id.
 
 When to stop: set done=true when every focus strand has a clear finding (floor and edge), when the question
@@ -61,6 +71,10 @@ Set "evaluation" to null if there is no previous answer to evaluate. Set "next" 
 ## Course material for the focus strands (notation, definitions)
 
 {context}
+
+## Formula sheet allowed in the exam (excerpts)
+
+{formula_sheet}
 
 ## Exam excerpts (level and style the student must reach)
 

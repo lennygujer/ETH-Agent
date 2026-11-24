@@ -42,7 +42,7 @@ concepts this attempt actually exercised:
   rule applied confidently), or `slip` (the concept is understood, the execution had a careless error).
 - Stated high confidence on a wrong step points to `misconception`; a correct result with low confidence or
   without visible reasoning is still `correct`, but say so in the evidence.
-- evidence: one sentence describing what the attempt shows about the student's understanding.
+- evidence: one sentence (max. ~25 words) in {output_language_name}, addressed to the student as "du" ("Du hast …"), naming what they showed or lacked.
 
 Follow-up question ("probe"): ask exactly ONE question about the student's thinking, but only if the answer
 would change the diagnosis – e.g. the cause of an error is ambiguous (concept vs. slip), a correct result

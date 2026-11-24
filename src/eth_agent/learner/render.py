@@ -11,8 +11,17 @@ LEGEND = " · ".join(f"{STATUS_ICON[s]} {STATUS_LABEL[s]}" for s in
                     ["solid", "probably", "shaky", "missing", "misconception", "untested"])
 
 
+def short(text: str, limit: int) -> str:
+    """Auf ganze Wörter kürzen, mit … am Ende."""
+    text = re.sub(r"\s+", " ", text or "").strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit(" ", 1)[0].rstrip(",;:–-")
+    return (cut or text[:limit]) + " …"
+
+
 def _label(n: Node) -> str:
-    title = _UNSAFE.sub(" ", re.sub(r"\s+", " ", n.title)).strip()[:60]
+    title = short(_UNSAFE.sub(" ", n.title), 60)
     return f"{STATUS_ICON[n.status]} {title}"
 
 
@@ -57,7 +66,7 @@ def weak_table(nodes: list[Node]) -> str:
     rows = ["| Status | Thema | Letzter Beleg | Aufgabe |", "|---|---|---|---|"]
     for n in spots:
         last = sorted(n.evidence, key=lambda e: e.ts)[-1]
-        detail = (last.detail or "").replace("|", "/").replace("\n", " ")[:140]
+        detail = short((last.detail or "").replace("|", "/"), 220)
         rows.append(f"| {STATUS_ICON[n.own_status]} {STATUS_LABEL[n.own_status]} | {n.title} | {detail} | "
                     f"{(last.problem_ref or '').replace('|', '/')[:60]} |")
     return "\n".join(rows)

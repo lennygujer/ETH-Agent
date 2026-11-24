@@ -15,11 +15,18 @@ def reply(evaluation=None, nxt=None, done=False, summary=""):
                                      "summary_markdown": summary}) + "\n```"
 
 
-Q1 = {"node_ids": ["physik2:s8-2"], "question": "Sind $\\psi_1$ und $\\psi_2$ im Topf orthogonal?",
+Q1 = {"node_ids": ["physik2:s8", "physik2:s8-2"], "question": "Sind $\\psi_1$ und $\\psi_2$ im Topf orthogonal?",
       "format": "mc", "options": ["Ja, immer", "Nur bei gleicher Energie", "Nein"],
       "answer_key": "A – verschiedene Eigenwerte eines hermiteschen Operators", "discriminates": "Orthogonalität"}
 Q2 = {"node_ids": ["physik2:s8-1"], "question": "Wie hängt $E_n$ von $L$ ab?", "format": "short",
       "options": [], "answer_key": "E_n ~ 1/L^2", "discriminates": "Skalierung"}
+
+
+def test_short_labels():
+    from eth_agent.learner.render import short
+    assert short("kurz", 10) == "kurz"
+    assert short("The Quantum Harmonic Oscillator II — Spectrum, Coherent States", 50) == \
+        "The Quantum Harmonic Oscillator II — Spectrum …"
 
 
 def test_helpers():
@@ -56,8 +63,9 @@ def test_diagnose_loop(course_dir):  # noqa: F811
     assert "physik2:s8-2 | Orthogonality" in p                 # Fokus aus dem Skript-Gerüst
     assert "infinite square well" in p                         # Kursmaterial gesucht
     assert "evaluation must be null" in p and "4 more question(s)" in p
+    assert "## Formula sheet allowed in the exam" in p and "{formula_sheet}" not in p
     assert codex.efforts[-1] == cfg.models.codex_effort_hard
-    assert "### Diagnose · Frage 1/4 — Orthogonality" in out
+    assert "### Diagnose · Frage 1/4 — Orthogonality\n" in out   # Elternthema weggelassen
     assert "- A) Ja, immer" in out and "*Diagnose #1 · Frage 1*" in out
     assert "verschiedene Eigenwerte" not in out                # Lösung bleibt verborgen
     assert any("Themen im Fokus" in s for s in status)
