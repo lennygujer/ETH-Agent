@@ -185,6 +185,12 @@ class Store:
             (course, pair, doc_type, problem_no, problem_no + ".%"))
         return [ChunkRow(*r) for r in rows]
 
+    def file_chunks(self, course: str, pair: str, doc_type: str) -> list[ChunkRow]:
+        """Alle Chunks einer Datei (z. B. einer ganzen Übungsstunde) in Lesereihenfolge."""
+        rows = self.db.execute(_CHUNK_SELECT + " WHERE f.course=? AND f.pair_key=? AND c.doc_type=? ORDER BY c.ord",
+                               (course, pair, doc_type))
+        return [ChunkRow(*r) for r in rows]
+
     def files(self, course: str | None = None) -> list[sqlite3.Row]:
         self.db.row_factory = sqlite3.Row
         try:

@@ -156,7 +156,20 @@ class Agent:
                     if prev and prev.chunks:
                         ref = prev
                         break
-        if ref and ref.chunks:
+        if ref and ref.chunks and ref.kind == "uebungsstunde":
+            # Unterlage zum Erklären, keine Aufgabe: keine Tipp-Leiter, keine Musterlösung
+            secs = f", Abschnitte {ref.problem_no}" if ref.problem_no else " (ganz)"
+            ref_desc = f"Übungsstunde '{ref.file_pair_key}'{secs}"
+            used = 0
+            for c in ref.chunks:
+                if used + est_tokens(c.text) > CONTEXT_BUDGET - 2_000 and picked:
+                    status.append("Übungsstunde gekürzt – für Details nach einzelnen Abschnitten fragen")
+                    break
+                picked.append((c, "UNTERLAGE"))
+                used += est_tokens(c.text)
+            status.append(f"Übungsstunde gefunden: {ref.chunks[0].citation(course.name)}"
+                          + (f" (Abschnitte {ref.problem_no})" if ref.problem_no else f", {len(picked)} Abschnitte"))
+        elif ref and ref.chunks:
             ref_desc = f"{ref.kind} '{ref.file_pair_key}', Aufgabe {ref.problem_no}"
             status.append(f"Aufgabe gefunden: {ref.chunks[0].citation(course.name)}")
             picked += [(c, "AUFGABE") for c in ref.chunks]
@@ -166,7 +179,9 @@ class Agent:
                 picked += [(s, "MUSTERLÖSUNG") for s in sols]
 
         query = question
-        if ref and ref.chunks:
+        if ref and ref.chunks and ref.kind == "uebungsstunde":
+            query = f"{question} " + " ".join((c.title or "") for c in ref.chunks[:4])
+        elif ref and ref.chunks:
             # Mit dem Aufgabentext suchen, nicht mit "Serie 3 Aufgabe 1".
             first = ref.chunks[0]
             query = f"{first.title or ''} {first.text[:600]}"
@@ -197,6 +212,8 @@ class Agent:
         """Tipps statt Lösung: bei Aufgaben (Verweis oder Rechen-/Beweisauftrag), ausser ganze Lösung gewünscht."""
         if full or course.solution_mode == "full":
             return False
+        if any(lab == "UNTERLAGE" for _, lab in picked):
+            return False                 # Übungsstunden-Unterlagen werden erklärt, nicht als Aufgabe behandelt
         is_problem = any(lab == "AUFGABE" for _, lab in picked) or r.rule == "R4"
         return is_problem
 
@@ -213,6 +230,12 @@ class Agent:
         else:
             policy = ("Solution policy: no official solution is available for this question. Work carefully, "
                       "check limits, units and signs yourself.")
+        if any(lab == "UNTERLAGE" for _, lab in picked):
+            policy += ("\n\nThe student asks about specific sections of a tutorial-session handout (marked UNTERLAGE; "
+                       "all requested sections are included). Explain exactly those sections in their order: what "
+                       "each one sets out to show, the key idea and each formula with what its symbols mean, and how "
+                       "it connects to the previous section. Do not claim that parts are missing when they are "
+                       "marked UNTERLAGE.")
         check = _template("check_block.md") if (r.tool_verify and not hints) else ""
         hist = ""
         if history:

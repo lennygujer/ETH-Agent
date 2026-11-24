@@ -1,4 +1,5 @@
-"""Verweise wie "Serie 3 Aufgabe 2" oder "Prüfung Aug 2025 Aufgabe 4" direkt im Index auflösen.
+"""Verweise wie "Serie 3 Aufgabe 2", "Prüfung Aug 2025 Aufgabe 4" oder "Übungsstunde 11, 1.2 und 1.3"
+direkt im Index auflösen.
 
 Statt die Aufgabe per Suche zu raten, wird der passende Chunk exakt geholt (und die Musterlösung,
 falls vorhanden).
@@ -14,6 +15,12 @@ from ..retrieval.store import ChunkRow, Store
 _SERIE = re.compile(r"\b(?:serie|exercise\s*sheet|exercise|übungsblatt|uebungsblatt|blatt|ex)\s*_?(\d{1,2})\b", re.I)
 _PROBLEM = re.compile(r"\b(?:aufgabe|aufg\.?|problem|task|frage|question|nr\.?)\s*(\d{1,2}(?:\.\d{1,2}){0,2})\s*([a-h])?\)?",
                       re.I)
+_UEBUNG = re.compile(r"\b(?:übungsstunde|uebungsstunde|übungsstd\.?|übungsfolien|exercise\s*class|tutorial|"
+                     r"recitation)\s*(?:nr\.?|nummer)?\s*_?0?(\d{1,2})\b", re.I)
+_SECTION_KW = re.compile(r"\b(?:abschnitt|abschnitte|kapitel|teil|section|punkt|aufgabe|aufgaben|aufg\.?|problem)"
+                         r"\s+(\d{1,2}(?:\.\d{1,2}){0,2})", re.I)
+_ENUM_NEXT = re.compile(r"\s*(?:,|und|and|&|sowie|bis|-|–)\s*(\d{1,2}(?:\.\d{1,2}){0,2})\b")
+_DOTTED = re.compile(r"(?<![\d.])(\d{1,2}\.\d{1,2}(?:\.\d{1,2})?)(?![\d.]*\d)")
 _EXAM = re.compile(r"\b(prüfung|pruefung|exam|klausur|mock|probeprüfung|resit)\b", re.I)
 _MONTHS = {
     "jan": "jan", "januar": "jan", "january": "jan", "feb": "feb", "februar": "feb", "february": "feb",
@@ -23,7 +30,7 @@ _MONTHS = {
 
 @dataclass
 class Reference:
-    kind: str                  # "serie" | "pruefung"
+    kind: str                  # "serie" | "pruefung" | "uebungsstunde"
     file_pair_key: str
     problem_no: str | None
     part: str | None           # Teilaufgabe "b"
@@ -64,12 +71,60 @@ def _pair_matches(pair_key: str, tokens: set[str]) -> int:
     return score
 
 
+def _sections(text: str) -> list[str]:
+    """'1.2 und 1.3', 'Abschnitt 2', 'Aufgaben 1.2, 1.3' -> ['1.2', '1.3'] (Reihenfolge wie im Text)."""
+    found: list[tuple[int, str]] = []
+    for m in _SECTION_KW.finditer(text):
+        found.append((m.start(1), m.group(1)))
+        # Aufzählungen direkt dahinter: "Abschnitt 1.2, 1.3 und 1.4"
+        pos = m.end()
+        while True:
+            n = _ENUM_NEXT.match(text, pos)
+            if not n:
+                break
+            found.append((n.start(1), n.group(1)))
+            pos = n.end()
+    for m in _DOTTED.finditer(text):
+        found.append((m.start(1), m.group(1)))
+    out: list[str] = []
+    for _, sec in sorted(found):
+        if sec not in out:
+            out.append(sec)
+    return out
+
+
+def _resolve_uebung(store: Store, course: str, question: str, files) -> Reference | None:
+    um = _UEBUNG.search(question)
+    if not um:
+        return None
+    n = int(um.group(1))
+    hits = [r for r in files if r["doc_type"] == "uebungsstunde"
+            and re.search(rf"(^|\D)0?{n}(\D|$)", r["pair_key"] or "")]
+    if len(hits) != 1:
+        return None
+    pair = hits[0]["pair_key"]
+    rest = question[:um.start()] + " " + question[um.end():]
+    secs = _sections(rest)
+    if not secs:
+        return Reference("uebungsstunde", pair, None, None, store.file_chunks(course, pair, "uebungsstunde"))
+    chunks, seen = [], set()
+    for sec in secs:
+        for c in store.problem_chunks(course, pair, "uebungsstunde", sec):
+            if c.id not in seen:
+                chunks.append(c)
+                seen.add(c.id)
+    return Reference("uebungsstunde", pair, ", ".join(secs), None, chunks)
+
+
 def resolve(store: Store, course: str, question: str) -> Reference | None:
+    files = [r for r in store.files(course) if r["status"] != "placeholder"]
+    ub = _resolve_uebung(store, course, question, files)
+    if ub is not None:
+        return ub
     pm = _PROBLEM.search(question)
     problem_no = pm.group(1) if pm else None
     part = pm.group(2).lower() if pm and pm.group(2) else None
 
-    files = [r for r in store.files(course) if r["status"] != "placeholder"]
     if _EXAM.search(question):
         tokens = _exam_tokens(question)
         exams = [r for r in files if r["doc_type"] == "pruefung"]
