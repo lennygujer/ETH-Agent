@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS evidence (
     course TEXT NOT NULL,
     node_id TEXT NOT NULL,
     ts TEXT NOT NULL,
-    kind TEXT NOT NULL,            -- check | probe | diagnose | self
+    kind TEXT NOT NULL,            -- check | probe | diagnose | learn | self
     outcome TEXT NOT NULL,         -- correct | partial | wrong | misconception | slip
     confidence REAL,               -- eigene Sicherheit 0..1, falls angegeben
     detail TEXT,                   -- was genau (in Worten des Bewerters / deinen Worten)
@@ -82,6 +82,34 @@ CREATE TABLE IF NOT EXISTS diag_items (
     touched TEXT                   -- eingetragene Knoten, kommagetrennt
 );
 CREATE INDEX IF NOT EXISTS diag_items_diag ON diag_items(diag_id);
+CREATE TABLE IF NOT EXISTS lessons (
+    id INTEGER PRIMARY KEY,
+    course TEXT NOT NULL,
+    topic TEXT NOT NULL,
+    node_ids TEXT,                 -- Zielknoten der Lernkarte
+    ts TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',   -- open | done | stopped | abandoned
+    goal TEXT,
+    plan TEXT,                     -- JSON: [{id, label, requires: []}]
+    context TEXT,                  -- JSON: Material, Formelblatt, Prüfung, Belege (einmal gesucht)
+    summary TEXT
+);
+CREATE TABLE IF NOT EXISTS lesson_turns (
+    id INTEGER PRIMARY KEY,
+    lesson_id INTEGER NOT NULL,
+    n INTEGER NOT NULL,            -- Schritt (0 = Plan)
+    ts TEXT NOT NULL,
+    tutor TEXT NOT NULL,           -- was der Agent geschrieben hat (ohne Frage)
+    q_type TEXT,                   -- predict | check | NULL
+    q_node TEXT,
+    q_text TEXT,
+    q_options TEXT,                -- JSON-Liste
+    answer_key TEXT,               -- nie an dich ausgegeben
+    answer TEXT,                   -- deine Antwort
+    confidence REAL,
+    outcome TEXT
+);
+CREATE INDEX IF NOT EXISTS lesson_turns_lesson ON lesson_turns(lesson_id);
 """
 
 OUTCOMES = {"correct", "partial", "wrong", "misconception", "slip"}
@@ -372,6 +400,99 @@ class LearnerStore:
         with self.lock:
             self.db.execute("UPDATE diagnoses SET status=?, summary=? WHERE id=?", (status, summary, diag_id))
             self.db.commit()
+
+    # ------------------------------------------------------------------ Lektionen (/learn)
+    def open_lesson(self, course: str, topic: str, node_ids: list[str], context: str) -> int:
+        with self.lock:
+            self.db.execute("UPDATE lessons SET status='abandoned' WHERE course=? AND status='open'", (course,))
+            cur = self.db.execute("INSERT INTO lessons (course, topic, node_ids, ts, context) VALUES (?,?,?,?,?)",
+                                  (course, topic, ",".join(node_ids), now(), context))
+            self.db.commit()
+            return cur.lastrowid
+
+    def get_lesson(self, lesson_id: int) -> dict | None:
+        cols = ("id", "course", "topic", "node_ids", "status", "goal", "plan", "context", "summary")
+        r = self.db.execute(f"SELECT {', '.join(cols)} FROM lessons WHERE id=?", (lesson_id,)).fetchone()
+        if not r:
+            return None
+        d = dict(zip(cols, r))
+        d["node_ids"] = [x for x in (d["node_ids"] or "").split(",") if x]
+        try:
+            d["plan"] = json.loads(d["plan"] or "[]")
+        except json.JSONDecodeError:
+            d["plan"] = []
+        return d
+
+    def open_lesson_for(self, course: str) -> int | None:
+        r = self.db.execute("SELECT id FROM lessons WHERE course=? AND status='open' ORDER BY id DESC LIMIT 1",
+                            (course,)).fetchone()
+        return r[0] if r else None
+
+    def set_lesson_plan(self, lesson_id: int, goal: str | None, plan: list[dict]) -> None:
+        with self.lock:
+            if goal:
+                self.db.execute("UPDATE lessons SET goal=? WHERE id=?", (goal, lesson_id))
+            self.db.execute("UPDATE lessons SET plan=? WHERE id=?",
+                            (json.dumps(plan, ensure_ascii=False), lesson_id))
+            self.db.commit()
+
+    def finish_lesson(self, lesson_id: int, status: str, summary: str | None) -> None:
+        with self.lock:
+            self.db.execute("UPDATE lessons SET status=?, summary=? WHERE id=?", (status, summary, lesson_id))
+            self.db.commit()
+
+    def lesson_turns(self, lesson_id: int) -> list[dict]:
+        cols = ("id", "n", "tutor", "q_type", "q_node", "q_text", "q_options", "answer_key", "answer",
+                "confidence", "outcome")
+        out = []
+        for r in self.db.execute(f"SELECT {', '.join(cols)} FROM lesson_turns WHERE lesson_id=? ORDER BY n",
+                                 (lesson_id,)):
+            d = dict(zip(cols, r))
+            try:
+                d["q_options"] = json.loads(d["q_options"] or "[]")
+            except json.JSONDecodeError:
+                d["q_options"] = []
+            out.append(d)
+        return out
+
+    def add_lesson_turn(self, lesson_id: int, n: int, tutor: str, q: dict | None) -> int:
+        q = q or {}
+        with self.lock:
+            cur = self.db.execute(
+                "INSERT INTO lesson_turns (lesson_id, n, ts, tutor, q_type, q_node, q_text, q_options, answer_key) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (lesson_id, n, now(), tutor, q.get("type"), q.get("node"), q.get("text"),
+                 json.dumps(q.get("options") or [], ensure_ascii=False), q.get("answer_key")))
+            self.db.commit()
+            return cur.lastrowid
+
+    def answer_lesson_turn(self, turn_id: int, answer: str | None, confidence: float | None,
+                           outcome: str | None = None) -> None:
+        with self.lock:
+            self.db.execute("UPDATE lesson_turns SET answer=?, confidence=?, outcome=? WHERE id=?",
+                            (answer, confidence, outcome, turn_id))
+            self.db.commit()
+
+    def student_words(self, course: str, node_ids: list[str], limit: int = 8) -> list[dict]:
+        """Deine eigenen Antworten aus Diagnosen und Rückfragen zu diesen Knoten (für /learn)."""
+        if not node_ids:
+            return []
+        out = []
+        rows = self.db.execute(
+            "SELECT i.question, i.answer, i.confidence, i.outcome, i.feedback, i.touched FROM diag_items i "
+            "JOIN diagnoses d ON d.id = i.diag_id WHERE d.course=? AND i.answer IS NOT NULL ORDER BY i.id DESC",
+            (course,)).fetchall()
+        for q, a, conf, outc, fb, touched in rows:
+            if set((touched or "").split(",")) & set(node_ids):
+                out.append({"source": "diagnose", "question": q, "answer": a, "confidence": conf,
+                            "outcome": outc, "feedback": fb})
+        rows = self.db.execute("SELECT question, answer, node_ids FROM probes WHERE course=? AND answer IS NOT NULL "
+                               "ORDER BY id DESC", (course,)).fetchall()
+        for q, a, nids in rows:
+            if set((nids or "").split(",")) & set(node_ids):
+                out.append({"source": "rueckfrage", "question": q, "answer": a, "confidence": None,
+                            "outcome": None, "feedback": None})
+        return out[:limit]
 
     # ------------------------------------------------------------------ für Prompts
     def outline(self, course: str, max_nodes: int = 250) -> str:

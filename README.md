@@ -76,6 +76,24 @@ Frage bleibt bis zur Auswertung verborgen.
 Am Ende: Fazit pro Thema (worauf du aufbauen kannst, wo es bricht, Fehlvorstellungen, was als Nächstes) und die
 aktualisierten Knoten der Lernkarte.
 
+## Lernen
+
+`/learn <thema>` schliesst eine Lücke nach dem Lehrer von LearnHarness. Ohne Thema nimmt der Agent die dringendste
+Schwäche der Lernkarte (Fehlvorstellungen zuerst).
+
+1. **Plan:** Der Agent liest, was die Lernkarte über dich weiss – auch deine eigenen Antworten aus Diagnosen und
+   Rückfragen –, dazu Skript, Formelblatt und alte Prüfungen. Er zeigt ein konkretes Prüfungsziel und einen
+   kleinen Abhängigkeitsplan (Grundlagen unten, Ziel oben). Du bestätigst mit *ja* oder sagst, was du schon kannst.
+2. **Schritte:** pro Nachricht ein Denkschritt. Grundlagen als einfache, immer wahre Aussagen, alles Weitere
+   motiviert hergeleitet. Rhythmus: **Vorhersage** (raten erwünscht, wird nicht bewertet) → Erklärung →
+   **Kontrollfrage** (wird bewertet und in die Lernkarte eingetragen) → Reparatur oder weiter.
+3. **Ende:** wenn du eine reduzierte Prüfungsaufgabe richtig und begründet löst. Das Fazit nennt eine Aufgabe aus
+   einer alten Prüfung zum Festigen mit `/check`.
+
+Zwischendurch eigene Fragen stellen ist erlaubt. `/plan` zeigt den Plan (blau: aktuell, grün: gezeigt) und holt
+die Lektion auch nach einem Umweg zurück. `/weiter` überspringt eine Frage, `/stop` beendet. Unterrichtet wird mit
+Codex (`models.learn_provider: codex`), auf `claude` umstellbar; das andere Modell ist Rückfall.
+
 ## OneDrive-Sync
 
 Siehe `docs/sync.md`: entweder holt der Server den ETH-Ordner direkt aus OneDrive (rclone, alle 3 h),

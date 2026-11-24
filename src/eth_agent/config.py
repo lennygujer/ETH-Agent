@@ -86,6 +86,7 @@ class ModelsConfig:
     codex_effort_hard: str = "medium"       # Aufgaben, Herleitungen, Code (R4/R6)
     codex_effort_default: str = "low"       # Erklärungen, Fragen (R8)
     claude_model: str | None = None
+    learn_provider: str = "codex"           # /learn: codex (ChatGPT-Kontingent) oder claude (Pro-Kontingent)
     timeout_s: int = 600
 
 

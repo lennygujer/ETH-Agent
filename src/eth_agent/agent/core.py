@@ -25,6 +25,7 @@ _COURSE_PREFIX = re.compile(r"^\s*[/!]([\wäöüÄÖÜ-]+)\b[ \t]*")
 
 _STOP = re.compile(r"^[/!](stop|abbrechen|ende)\b", re.I)
 _SKIP = re.compile(r"^[/!](weiter|skip)\b", re.I)
+_PLAN = re.compile(r"^[/!]plan\b", re.I)
 _FULL_FLAG = re.compile(r"\s*--\s*(l(ö|oe)sung|solution|full)\b", re.I)
 _FULL_PREFIX = re.compile(r"^\s*[/!]l(ö|oe)sung\b\s*", re.I)
 _FULL_WORDS = re.compile(r"\b(ganze|vollst(ä|ae)ndige|komplette|ganzen|vollst(ä|ae)ndigen|kompletten)\s+"
@@ -308,8 +309,29 @@ class Agent:
         history = history or []
         status = _Status(on_status)
 
-        # Laufende Diagnose? (letzte Agenten-Antwort enthielt "Diagnose #d · Frage n")
+        # Laufende Lektion? (letzte Agenten-Antwort enthielt "Lernen #l · Schritt n")
         from ..skills import diagnose as dg
+        from ..skills import learn as ln
+        pend = ln.pending_lesson(history)
+        if pend is not None and message.strip():
+            lid, step = pend
+            low = message.lstrip()
+            text = cid = None
+            if _STOP.match(low):
+                text, cid = ln.stop(self, lid)
+            elif _PLAN.match(low):
+                lesson = self.learner.get_lesson(lid)
+                text, cid = ln.plan_view(self, lid), (lesson["course"] if lesson else None)
+            elif _SKIP.match(low):
+                text, cid = ln.answer(self, lid, step, "", status.append, skip=True)
+            elif not low.startswith(("/", "!", "@")):
+                text, cid = ln.answer(self, lid, step, message, status.append)
+            if text is not None:
+                holder["course"] = self.cfg.courses.get(cid) if cid else None
+                return Answer(text, Route("LEARN", "skill", message, skill="learn"), status=list(status),
+                              prerendered=True)
+
+        # Laufende Diagnose? (letzte Agenten-Antwort enthielt "Diagnose #d · Frage n")
         pend = dg.pending_diagnosis(history)
         if pend is not None and message.strip():
             did, qn = pend
@@ -360,11 +382,25 @@ class Agent:
                                   "`/kurse`.", r)
                 text = dg.start(self, course, r.question, status.append)
                 return Answer(text, r, status=list(status), prerendered=True)
-            if r.skill in {"stop", "abbrechen"}:
+            if r.skill in {"learn", "lernen"}:
+                if not course.id:
+                    return Answer("Für `/learn` bitte zuerst ein Fach wählen, z. B. `/physik`. Alle Fächer: "
+                                  "`/kurse`.", r)
+                text = ln.start(self, course, r.question, status.append)
+                return Answer(text, r, status=list(status), prerendered=True)
+            if r.skill in {"stop", "abbrechen", "ende"}:
+                lid = self.learner.open_lesson_for(course.id) if course.id else None
+                if lid is not None:
+                    return Answer(ln.stop(self, lid)[0], r, prerendered=True)
                 did = self.learner.open_diagnosis_for(course.id) if course.id else None
                 if did is None:
-                    return Answer("Gerade läuft keine Diagnose.", r, prerendered=True)
+                    return Answer("Gerade läuft keine Diagnose oder Lektion.", r, prerendered=True)
                 return Answer(dg.stop(self, did)[0], r, prerendered=True)
+            if r.skill == "plan":
+                lid = self.learner.open_lesson_for(course.id) if course.id else None
+                if lid is None:
+                    return Answer("Gerade läuft keine Lektion. Starten mit `/learn <thema>`.", r, prerendered=True)
+                return Answer(ln.plan_view(self, lid), r, prerendered=True)   # setzt die Lektion fort
             if r.skill == "weiter":
                 return Answer("Rückfrage übersprungen.", r, prerendered=True)
             if r.skill == "check":
@@ -436,7 +472,11 @@ HELP = """**ETH-Agent – Befehle**
 - **Diagnose:** `/diagnose` stellt bis zu 8 kurze, gezielte Fragen über das Fach (`/diagnose tunneling` nur zu
   einem Thema, `/diagnose 5` mit 5 Fragen). Antworte mit Buchstabe oder eigenen Worten plus kurzem Warum;
   «weiss nicht» ist erlaubt und hilfreich. `/weiter` überspringt eine Frage, `/stop` beendet mit Fazit.
-- Tipp für `/check` und `/diagnose`: Gedankengang mitschreiben und `Sicherheit: 70%` angeben – beides macht die
-  Karte genauer.
-- Geplant: `/practice`, `/learn`.
+- **Lernen:** `/learn <thema>` schliesst eine Lücke Schritt für Schritt (ohne Thema: die dringendste Schwäche der
+  Lernkarte). Zuerst ein Plan mit Prüfungsziel, dann pro Nachricht ein Denkschritt mit Vorhersage oder
+  Kontrollfrage. Zwischendurch eigene Fragen stellen ist erlaubt. `/plan` zeigt den Plan, `/weiter` überspringt,
+  `/stop` beendet.
+- Tipp für `/check`, `/diagnose` und `/learn`: Gedankengang mitschreiben und `Sicherheit: 70%` angeben – beides
+  macht die Karte genauer.
+- Geplant: `/practice`.
 """

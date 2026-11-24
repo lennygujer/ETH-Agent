@@ -74,4 +74,5 @@ models:
   codex_effort_hard: medium    # Aufgaben, Herleitungen, Code
   codex_effort_default: low    # Erklärungen und allgemeine Fragen
   claude_model:                # leer = Standardmodell von Claude Code
+  learn_provider: codex        # /learn unterrichtet mit codex oder claude (das andere ist Rückfall)
   timeout_s: 600
