@@ -26,7 +26,7 @@ class CheckResult:
 
     @property
     def badge(self) -> str:
-        return {"pass": "Tool ✓", "fail": "Tool ✗", "error": "Tool ✗ (Prüfcode fehlerhaft)",
+        return {"pass": "Tool ✓", "fail": "Tool ✗", "error": "Prüfcode lief nicht – Antwort ungeprüft",
                 "none": "ungeprüft"}[self.status]
 
 

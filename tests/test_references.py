@@ -55,3 +55,4 @@ def test_resolve_uebungsstunde_sections(course_dir):  # noqa: F811
     assert "Explain exactly those sections" in p
     assert any("Übungsstunde gefunden" in s and "1.2, 1.3" in s for s in st)
     assert "Tipp" not in ans.text                                  # keine Tipp-Leiter für Unterlagen
+    assert "Verification code:" not in p and "Geprüft" not in ans.render()   # Unterlage erklären: kein Prüfcode

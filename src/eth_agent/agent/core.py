@@ -85,6 +85,7 @@ class Answer:
     prerendered: bool = False     # Skills liefern fertig formatierten Text
     names: dict[str, str] = field(default_factory=dict)   # Kurs-ID -> Name für Zitate
     course: Course | None = None  # Fach, in dem geantwortet wurde
+    labels: list = field(default_factory=list)   # Material-Labels (AUFGABE, UNTERLAGE …) je Quelle
 
     def render(self, course_name: str | None = None) -> str:
         if self.prerendered:
@@ -94,12 +95,17 @@ class Answer:
             parts.append("---\n**Quellen**\n" + "\n".join(
                 f"[{i}] {c.citation(self.names.get(c.course) or course_name)}"
                 for i, c in enumerate(self.sources, 1)))
-        footer = [f"Geprüft: {self.check.badge}"]
-        if self.check.status == "pass":
-            footer[0] += " (Prüfcode vom selben Modell)"
+        footer = []
+        if self.check.status != "none":
+            footer.append(f"Geprüft: {self.check.badge}")
+            if self.check.status == "pass":
+                footer[0] += " (Prüfcode vom selben Modell)"
+        elif not any(lab == "UNTERLAGE" for lab in self.labels):
+            footer.append("Geprüft: ungeprüft")
         if self.provider:
             footer.append(f"Modell: {self.provider}")
-        parts.append(" · ".join(footer))
+        if footer:
+            parts.append(" · ".join(footer))
         return "\n\n".join(parts)
 
 
@@ -236,7 +242,8 @@ class Agent:
                        "each one sets out to show, the key idea and each formula with what its symbols mean, and how "
                        "it connects to the previous section. Do not claim that parts are missing when they are "
                        "marked UNTERLAGE.")
-        check = _template("check_block.md") if (r.tool_verify and not hints) else ""
+        verify = r.tool_verify and not hints and not any(lab == "UNTERLAGE" for _, lab in picked)
+        check = _template("check_block.md") if verify else ""
         hist = ""
         if history:
             lines = [f"**{'Student' if t.role == 'user' else 'Assistant'}:** {t.text[:1500]}" for t in history[-6:]]
@@ -469,12 +476,13 @@ class Agent:
                           sources=[c for c, _ in picked], llm=res, prompt=prompt, status=list(status))
 
         text, chk = res.text, CheckResult("none", "")
-        if r.tool_verify and not hints:
+        if r.tool_verify and not hints and not any(lab == "UNTERLAGE" for _, lab in picked):
             text, chk = check_answer(res.text)
             if chk.status != "none":
                 status.append(f"Prüfcode: {chk.badge}")
         return Answer(text, r, provider=res.provider, sources=[c for c, _ in picked], check=chk,
-                      reference=ref_desc, llm=res, prompt=prompt, status=list(status))
+                      reference=ref_desc, llm=res, prompt=prompt, status=list(status),
+                      labels=[lab for _, lab in picked])
 
 
 HELP = """**ETH-Agent – Befehle**
