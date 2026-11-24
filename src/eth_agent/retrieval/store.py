@@ -144,11 +144,15 @@ class Store:
 
     def add_chunks(self, file_id: int, course: str, doc_type: str, chunks) -> None:
         for c in chunks:
+            # Lösungsteil im selben Dokument (Übungsskript mit "Lösung 45"): als Lösung speichern,
+            # damit solution_for() ihn über denselben Paarschlüssel findet.
+            ctype = f"{doc_type}_loesung" if getattr(c, "solution", False) and doc_type in {"serie", "pruefung"} \
+                else doc_type
             cur = self.db.execute(
                 """INSERT INTO chunks (file_id, course, doc_type, ord, problem_no, title, section,
                    points, page_start, page_end, printed_start, printed_end, text, tokens)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (file_id, course, doc_type, c.ord, c.problem_no, c.title, c.section, c.points,
+                (file_id, course, ctype, c.ord, c.problem_no, c.title, c.section, c.points,
                  c.page_start, c.page_end, c.printed_start, c.printed_end, c.text, c.tokens))
             self.db.execute("INSERT INTO chunks_fts(rowid, title, section, text) VALUES (?,?,?,?)",
                             (cur.lastrowid, c.title or "", c.section or "", c.text))

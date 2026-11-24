@@ -35,6 +35,7 @@ class Chunk:
     page_end: int
     printed_start: str | None
     printed_end: str | None
+    solution: bool = False       # Lösungsteil im selben Dokument ("Lösung 45")
 
     @property
     def tokens(self) -> int:
@@ -134,7 +135,9 @@ def chunk_problems(doc: PdfDoc) -> list[Chunk]:
         parts = [lines] if est_tokens("\n".join(t for _, _, t in lines)) <= MAX_PROBLEM_TOKENS \
             else _split_by_size(lines, MAX_PROBLEM_TOKENS, 150)
         for part in parts:
-            chunks.append(_make_chunk(len(chunks), part, title, section, b.heading.heading_no, points))
+            ch = _make_chunk(len(chunks), part, title, section, b.heading.heading_no, points)
+            ch.solution = b.heading.solution
+            chunks.append(ch)
     return chunks
 
 

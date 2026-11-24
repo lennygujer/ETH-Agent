@@ -175,7 +175,7 @@ def _resolve_by_number(store: Store, course: str, question: str, problem_no: str
         def score(key):
             name = key[0].lower().replace("ue", "ü")
             s = sum(1 for w in words if w.replace("ue", "ü").rstrip("en").rstrip("n") in name)
-            return (s, key[1] == "serie")
+            return (s, bool(store.solution_for(groups[key][0])), key[1] == "serie")
         ranked = sorted(groups, key=score, reverse=True)
         if score(ranked[0]) == score(ranked[1]):
             return None            # mehrdeutig -> normale Suche

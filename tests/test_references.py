@@ -106,3 +106,25 @@ def test_server_unwraps_openwebui_template():
         {"type": "text", "text": "/check a"}, {"type": "image_url", "image_url": {"url": "data:image/png;base64," + "A" * 5000}}]}]})
     parts = snap["messages"][0]["parts"]
     assert parts[0]["start"] == "/check a" and parts[1]["len"] > 5000 and len(parts[1]["url_start"]) == 40
+
+
+def test_uebungsskript_with_solutions_in_same_file(course_dir):  # noqa: F811
+    """SST-Übungsskriptum: 'Aufgabe 45∗' (nicht fett) vorne, 'Lösung 45' hinten in derselben Datei."""
+    body = 12.0
+    make_pdf(course_dir / "material" / "Physik 2" / "SST1-Uebung.pdf", [
+        [("Übungsskriptum Signal- und Systemtheorie I", 16, True)],
+        [("Aufgabe 44∗", body, False), ("Echo entfernen durch Rückkopplung.", body, False),
+         ("Aufgabe 45", body, True), ("Ein LTI-System mit Impulsantwort h(t).", body, False),
+         ("c) Bestimmen Sie die Antwort y(t) auf x(t) = exp(-t) sigma(t).", body, False)],
+        [("Lösung 44", body, True), ("Die Idee ist, das Echo abzuziehen.", body, False)],
+        [("Lösung 45", body, True), ("c) y(t) ergibt sich durch Faltung: y(t) = 2 - exp(-t).", body, False)],
+    ])
+    cfg = make_cfg(course_dir)
+    agent = _agent(cfg, codex=FakeProvider("codex"), claude=FakeProvider("claude"))
+    ref = resolve(agent.store, "physik2", "aufgabe 45 c in ss übungen")
+    assert ref and ref.part == "c" and [c.doc_type for c in ref.chunks] == ["serie"]
+    assert "LTI-System" in ref.chunks[0].text and "Lösung" not in ref.chunks[0].text
+    sol = agent.store.solution_for(ref.chunks[0])
+    assert sol and sol[0].doc_type == "serie_loesung" and "Faltung" in sol[0].text
+    ref44 = resolve(agent.store, "physik2", "Aufgabe 44")
+    assert ref44 and "Echo" in ref44.chunks[0].text

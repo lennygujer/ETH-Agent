@@ -17,6 +17,12 @@ import pymupdf
 
 _HEADING_NUM = re.compile(r"^(\d+(?:\.\d+){0,3})\.?$")
 _HEADING_NUM_TITLE = re.compile(r"^(\d+(?:\.\d+){0,3})\.?\s+(\S.*)$")
+# "Aufgabe 45", "Lösung 45", "Problem 3.2 (4 Punkte)", "Exercise 2: Title" als Überschrift
+_KEYWORD_HEAD = re.compile(r"^(aufgabe|aufg\.|problem|exercise|task|übung|lösung|loesung|solution)\s+"
+                           r"(\d+(?:\.\d+){0,2})\s*[∗*†·]?\s*[:.)]?\s*(.*)$", re.I)
+# Zeile, die nur aus "Aufgabe 44∗" besteht: Überschrift, auch wenn nicht (ganz) fett gesetzt
+_KEYWORD_ONLY = re.compile(r"^(aufgabe|problem|exercise|lösung|loesung|solution)\s+\d+(?:\.\d+){0,2}\s*[∗*†·]?$",
+                           re.I)
 _PAGE_NUM = re.compile(r"^\d{1,4}$")
 _TOC_DOTS = re.compile(r"(\.\s){4,}")
 _BOLD_FONT = re.compile(r"(BX|Bold|Heavy|Black|Semibold|SFBX|CMBX)", re.I)
@@ -30,6 +36,7 @@ class Line:
     heading_no: str | None = None   # "8.2" bei nummerierten Überschriften
     heading_title: str | None = None
     minor_heading: bool = False      # fett, aber ohne Nummer (z. B. "Solution")
+    solution: bool = False           # "Lösung 45" / "Solution 3": Lösungsteil im selben Dokument
 
     @property
     def level(self) -> int | None:
@@ -112,6 +119,21 @@ def _printed_pages(pages: list[list[Line]]) -> list[str | None]:
                 num = int(cand.text)
                 break
         detected.append(num)
+    # Konsens über alle Zahlen oben/unten (auch fette): erkennt Seitenzahlen auch dann, wenn oben eine
+    # konstante Kapitelnummer steht ("1 Übungen") und die echte Seitenzahl fett gesetzt ist.
+    allc: Counter[int] = Counter()
+    for i, lines in enumerate(pages):
+        seen = set()
+        for cand in lines[:3] + lines[-2:]:
+            if _PAGE_NUM.match(cand.text):
+                off = i + 1 - int(cand.text)
+                if off not in seen:
+                    allc[off] += 1
+                    seen.add(off)
+    if allc:
+        off, count = allc.most_common(1)[0]
+        if count >= max(3, 0.6 * len(pages)):
+            return [str(i + 1 - off) if i + 1 - off >= 1 else None for i in range(len(pages))]
     offsets = Counter(i + 1 - n for i, n in enumerate(detected) if n is not None)
     if offsets:
         off, count = offsets.most_common(1)[0]
@@ -125,6 +147,16 @@ def _mark_headings(lines: list[Line], body: float) -> None:
     i = 0
     while i < len(lines):
         l = lines[i]
+        km = _KEYWORD_HEAD.match(l.text) if (
+            (l.bold and l.size >= body * 0.95 and len(l.text) < 90)
+            or (l.size >= body * 0.95 and _KEYWORD_ONLY.match(l.text.strip()))) else None
+        if km:
+            kw = km.group(1).lower()
+            l.heading_no = km.group(2)
+            l.heading_title = km.group(3).strip() or f"{km.group(1)} {km.group(2)}"
+            l.solution = kw in {"lösung", "loesung", "solution"}
+            i += 1
+            continue
         is_big_bold = l.bold and l.size >= body * 1.1
         if is_big_bold:
             m = _HEADING_NUM.match(l.text)
