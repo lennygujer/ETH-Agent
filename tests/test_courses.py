@@ -128,3 +128,17 @@ def test_course_switching(eth):
     assert "zuerst ein Fach wählen" in a.handle("/check Serie 1 Aufgabe 1\nx").render()
     out = a.handle("/sst /check Serie 1 Aufgabe 1\nF = sinc").render()
     assert "zuerst ein Fach" not in out
+
+
+def test_resolve_by_letter_sequence():
+    from eth_agent.config import Config, Course, ModelsConfig, RetrievalConfig
+    from pathlib import Path
+    courses = {cid: Course(id=cid, folder=name, name=name) for cid, name in [
+        ("systemundsignaltheorie", "System und Signaltheorie"), ("springerbuecher", "Springer Bücher"),
+        ("diskretemathematik", "Diskrete Mathematik"), ("digitech", "Digitech")]}
+    cfg = Config(material_root=Path("/tmp"), courses=courses, data_dir=Path("/tmp"), folder_doc_types={},
+                 retrieval=RetrievalConfig(), models=ModelsConfig())
+    assert cfg.resolve_course("sst").id == "systemundsignaltheorie"
+    assert cfg.resolve_course("ss").id == "systemundsignaltheorie"
+    assert cfg.resolve_course("dm").id == "diskretemathematik"
+    assert cfg.resolve_course("dit") is None or cfg.resolve_course("dit").id in {"digitech", "diskretemathematik"}

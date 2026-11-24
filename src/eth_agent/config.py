@@ -129,6 +129,12 @@ class Config:
             exact = [c for c in self.courses.values() if t in auto_aliases(c.name)]
         if not exact and len(t) >= 3:
             exact = [c for c in self.courses.values() if slug(c.name).startswith(t)]
+        if not exact and len(t) >= 3:
+            # Kürzel als Buchstabenfolge im Namen: "sst" -> "SyStem und SignalTheorie"
+            exact = [c for c in self.courses.values()
+                     if slug(c.name).startswith(t[0]) and _subsequence(t, slug(c.name))]
+            if len({c.name for c in exact}) > 1:
+                return None
         if not exact:
             return None
         exact.sort(key=lambda c: semester_key(c.semester), reverse=True)
@@ -140,6 +146,11 @@ class Config:
                 return None
             return same[0]
         return exact[0]
+
+
+def _subsequence(short: str, long: str) -> bool:
+    it = iter(long)
+    return all(ch in it for ch in short)
 
 
 def _expand(p: str) -> Path:
