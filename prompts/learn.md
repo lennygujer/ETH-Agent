@@ -77,12 +77,14 @@ Turns left in this session: {turns_left}. Wrap up when it gets low.
   "question": {"type": "predict | check", "node": "plan node id", "text": "markdown",
                "options": ["A) …", "B) …"], "answer_key": "correct answer + why (hidden from the student)"},
   "goal": "only in the planning turn, else empty",
-  "plan": null,
+  "plan": [{"id": "phasenfaktor", "label": "Eigenzustand: Phasenfaktor hat Betrag 1", "requires": []},
+           {"id": "ziel", "label": "Dichte einer Überlagerung berechnen", "requires": ["phasenfaktor"]}],
   "done": false,
   "summary_markdown": ""
 }
 ```
-(options: [] for free-text questions.)
+(options: [] for free-text questions. "plan" is a list of nodes exactly like the example, or null when unchanged.
+Backslashes in LaTeX must be doubled inside JSON strings: "$\\hbar\\omega$".)
 
 ## What the learner map and earlier work say about the student on this topic
 

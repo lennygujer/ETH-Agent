@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Callable
 from ..learner.model import STATUS_ICON, STATUS_LABEL, Node, parse_confidence
 from ..learner.render import short, weak_spots
 from . import diagnose as dg
-from .check import ensure_skeleton, parse_grade
+from .check import dump_raw, ensure_skeleton, parse_grade
 
 if TYPE_CHECKING:
     from ..agent.core import Agent, Turn
@@ -44,19 +44,25 @@ def pending_lesson(history: list["Turn"]) -> tuple[int, int] | None:
 
 
 def _clean_plan(raw) -> list[dict]:
+    """Plan aus der Modellantwort; tolerant gegenüber üblichen Varianten ({nodes: [...]}, title statt label …)."""
+    if isinstance(raw, dict):
+        raw = raw.get("nodes") or raw.get("plan") or raw.get("steps") or []
     if not isinstance(raw, list):
         return []
     out, seen = [], set()
     for x in raw:
         if not isinstance(x, dict):
             continue
-        nid = _ID.sub("-", str(x.get("id") or "").lower()).strip("-")
-        label = str(x.get("label") or "").strip()
+        label = str(x.get("label") or x.get("title") or x.get("name") or "").strip()
+        nid = _ID.sub("-", str(x.get("id") or x.get("slug") or label).lower()).strip("-")[:40]
         if not nid or not label or nid in seen:
             continue
         seen.add(nid)
+        req = x.get("requires") or x.get("depends_on") or x.get("deps") or x.get("prerequisites") or []
+        if isinstance(req, str):
+            req = [req]
         out.append({"id": nid, "label": label[:80],
-                    "requires": [_ID.sub("-", str(r).lower()).strip("-") for r in (x.get("requires") or [])]})
+                    "requires": [_ID.sub("-", str(r).lower()).strip("-") for r in req]})
     for x in out:
         x["requires"] = [r for r in x["requires"] if r in seen and r != x["id"]]
     return out
@@ -179,7 +185,9 @@ def _ask(agent: "Agent", course: "Course", lesson: dict, turns: list[dict], phas
             data = parse_grade(res.text)
             if data:
                 return data
-        say(f"{name} fehlgeschlagen – versuche das nächste Modell")
+            say(f"{name}: Antwort nicht lesbar (abgelegt in {dump_raw(agent, 'learn', res.text)})")
+        else:
+            say(f"{name} fehlgeschlagen: {short(res.error or 'unbekannter Fehler', 200)}")
     return None
 
 
@@ -231,11 +239,15 @@ def start(agent: "Agent", course: "Course", arg: str, say: Callable[[str], None]
                                     json.dumps(ctx, ensure_ascii=False))
     lesson = agent.learner.get_lesson(lid)
     data = _ask(agent, course, lesson, [], PHASE_PLAN, say)
-    plan = _clean_plan(data.get("plan")) if data else []
-    if not data or not plan:
+    if not data:
         agent.learner.finish_lesson(lid, "stopped", None)
-        return "Die Lektion konnte nicht geplant werden (keine gültige Antwort vom Modell). Versuch es nochmal."
+        return ("Die Lektion konnte nicht geplant werden (keine lesbare Antwort vom Modell; Details im Block "
+                "«Nachgedacht»). Versuch es nochmal.")
     goal = str(data.get("goal") or "").strip()
+    plan = _clean_plan(data.get("plan"))
+    if not plan:                     # ohne Plan trotzdem unterrichten – der Plan kann später nachkommen
+        say(f"Plan fehlte in der Antwort (abgelegt in {dump_raw(agent, 'learn-plan', json.dumps(data, ensure_ascii=False))})")
+        plan = [{"id": "ziel", "label": short(goal or topic, 80), "requires": []}]
     agent.learner.set_lesson_plan(lid, goal, plan)
     approach = str(data.get("reply_markdown") or "").strip()
     agent.learner.add_lesson_turn(lid, 0, approach, None)

@@ -22,7 +22,7 @@ def js(**kw):
 
 
 def test_plan_helpers():
-    plan = _clean_plan(PLAN + [{"id": "Eigen", "label": "doppelt"}, {"id": "", "label": "x"}, "kaputt"])
+    plan = _clean_plan(PLAN + [{"id": "Eigen", "label": "doppelt"}, {"id": "leer", "label": ""}, "kaputt"])
     assert [x["id"] for x in plan] == ["eigen", "superpos", "ziel"]
     assert plan[2]["requires"] == ["superpos"]                      # unbekannte Abhängigkeit entfernt
     m = plan_mermaid(plan, [{"q_type": "check", "q_node": "eigen", "outcome": "correct"},
@@ -125,3 +125,25 @@ def test_learn_stop_skip_and_errors(course_dir):  # noqa: F811
     # kaputte Planung
     bad = _agent(cfg, codex=FakeProvider("codex", reply="kein json"), claude=FakeProvider("claude", fail=True))
     assert "nicht geplant werden" in bad.handle("/learn tunneling", course_id="physik2").render()
+
+
+def test_learn_tolerates_model_variants(course_dir):  # noqa: F811
+    cfg = make_cfg(course_dir)
+    # Plan als {"nodes": [...]} mit title/depends_on und LaTeX ohne doppelte Backslashes
+    raw = ('```json\n{"evaluation": null, "reply_markdown": "Wir beginnen bei $\\hbar\\omega$.", "question": null, '
+           '"goal": "$|\\psi|^2$ verstehen", "plan": {"nodes": [{"title": "Photonenenergie", "depends_on": []}, '
+           '{"id": "kraft", "title": "Kraft = Impulsfluss", "depends_on": "photonenenergie"}]}, '
+           '"done": false, "summary_markdown": ""}\n```')
+    agent = _agent(cfg, codex=FakeProvider("codex", reply=raw), claude=FakeProvider("claude"))
+    out = agent.handle("/learn photon momentum", course_id="physik2").render()
+    assert "## Lernen: photon momentum" in out and "\\hbar\\omega" in out and "$|\\psi|^2$ verstehen" in out
+    assert "n_photonenenergie --> n_kraft" in out
+
+    # gültiges JSON ganz ohne Plan -> Ein-Knoten-Plan statt Abbruch, Antwort wird abgelegt
+    st: list[str] = []
+    agent2 = _agent(cfg, codex=FakeProvider("codex", reply=js(goal="Kraft auf Spiegel", reply_markdown="Los.")),
+                    claude=FakeProvider("claude"))
+    out2 = agent2.handle("/learn photon momentum", course_id="physik2", on_status=st.append).render()
+    assert "Passt der Plan?" in out2 and 'n_ziel["Kraft auf Spiegel"]' in out2
+    assert any("Plan fehlte" in s for s in st)
+    assert list((cfg.data_dir / "logs").glob("learn-plan-*.txt"))

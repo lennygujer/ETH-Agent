@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Callable
 from ..config import slug
 from ..learner.model import STATUS_ICON, STATUS_LABEL, STATUS_ORDER, Node, parse_confidence
 from ..retrieval.search import search
-from .check import ensure_skeleton, parse_grade
+from .check import dump_raw, ensure_skeleton, parse_grade
 
 if TYPE_CHECKING:
     from ..agent.core import Agent, Turn
@@ -208,7 +208,9 @@ def _ask(agent: "Agent", course: "Course", diag: dict, items: list[dict], budget
             data = parse_grade(res.text)
             if data:
                 return data
-        say(f"{name} fehlgeschlagen – versuche das nächste Modell")
+            say(f"{name}: Antwort nicht lesbar (abgelegt in {dump_raw(agent, 'diagnose', res.text)})")
+        else:
+            say(f"{name} fehlgeschlagen: {(res.error or 'unbekannter Fehler')[:200]}")
     return None
 
 

@@ -164,13 +164,32 @@ def parse_grade(text: str) -> dict | None:
         if start != -1 and end > start:
             candidates = [text[start:end + 1]]
     for c in candidates:
-        try:
-            data = json.loads(c)
-            if isinstance(data, dict):
-                return data
-        except json.JSONDecodeError:
-            continue
+        for attempt in (c, _repair_escapes(c)):
+            try:
+                data = json.loads(attempt)
+                if isinstance(data, dict):
+                    return data
+            except json.JSONDecodeError:
+                continue
     return None
+
+
+_BAD_ESCAPE = re.compile(r'\\(?!["\\/bfnrtu])')
+
+
+def _repair_escapes(text: str) -> str:
+    """LaTeX in JSON-Strings ohne doppelten Backslash (\\psi, \\hbar …) retten."""
+    return _BAD_ESCAPE.sub(r"\\\\", text)
+
+
+def dump_raw(agent, skill: str, text: str) -> str:
+    """Unlesbare Modellantwort zur Fehlersuche ablegen; gibt den Pfad zurück."""
+    import time
+    d = agent.cfg.data_dir / "logs"
+    d.mkdir(parents=True, exist_ok=True)
+    path = d / f"{skill}-{time.strftime('%Y%m%d-%H%M%S')}.txt"
+    path.write_text(text or "(leer)", encoding="utf-8")
+    return str(path)
 
 
 def trust_level(official: bool, solutions: list[Solution], agreement: str | None) -> str:
