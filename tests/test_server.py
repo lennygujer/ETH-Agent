@@ -95,3 +95,16 @@ def test_check_with_uploaded_image(course_dir):  # noqa: F811
 
 def test_clean_assistant():
     assert clean_assistant("<think>\n· a\n</think>\n\nText\n\n---\n**Quellen**\n[1] y") == "Text"
+
+
+def test_check_with_openwebui_attachment_prefix(tmp_path):
+    """Echter Aufbau einer Open-WebUI-Anfrage mit Foto: /check muss als Befehl erkannt werden."""
+    import base64
+    from eth_agent.server import _text_and_images, unwrap_user_text
+    png = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\nfake").decode()
+    content = [{"type": "text", "text": '<attached_files>\n<file type="file" id="x" content_type="image/png" '
+                                        'name="image.png"/>\n</attached_files>\n\n'},
+               {"type": "text", "text": "/check aufgabe 45 c in ss übungen"},
+               {"type": "image_url", "image_url": {"url": png}}]
+    text, images = _text_and_images(content, tmp_path)
+    assert unwrap_user_text(text) == "/check aufgabe 45 c in ss übungen" and len(images) == 1

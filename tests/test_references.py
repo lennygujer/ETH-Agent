@@ -99,6 +99,9 @@ def test_server_unwraps_openwebui_template():
     wrapped = "### Task:\nRespond …\n<context>\n<source>foto.jpg</source>\n</context>\n<user_query>\n/check aufgabe 45 c\n</user_query>"
     assert unwrap_user_text(wrapped) == "/check aufgabe 45 c"
     assert unwrap_user_text("/check x") == "/check x"
+    owui = ('<attached_files>\n<file type="file" id="92e5" content_type="image/png" name="image.png"/>\n'
+            '</attached_files>\n\n\n/check aufgabe 45 c in ss übungen')
+    assert unwrap_user_text(owui) == "/check aufgabe 45 c in ss übungen"
     snap = request_snapshot({"messages": [{"role": "user", "content": [
         {"type": "text", "text": "/check a"}, {"type": "image_url", "image_url": {"url": "data:image/png;base64," + "A" * 5000}}]}]})
     parts = snap["messages"][0]["parts"]

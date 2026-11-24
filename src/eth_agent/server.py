@@ -75,13 +75,15 @@ def _text_and_images(content: Any, tmpdir: Path) -> tuple[str, list[str]]:
 
 
 _USER_QUERY = re.compile(r"<user_query>\s*(.*?)\s*</user_query>", re.S)
+_ATTACHED = re.compile(r"<attached_files>.*?</attached_files>", re.S)
 
 
 def unwrap_user_text(text: str) -> str:
-    """Open WebUI verpackt Nachrichten mit Dateien manchmal in eine Vorlage (<context>…<user_query>…).
-    Für Befehle wie /check zählt nur, was du geschrieben hast."""
+    """Open WebUI setzt bei Anhängen eigenen Text vor deine Nachricht (<attached_files>…) oder verpackt sie in
+    eine Vorlage (<context>…<user_query>…). Für Befehle wie /check zählt nur, was du geschrieben hast."""
     m = _USER_QUERY.search(text or "")
-    return m.group(1) if m else text
+    text = m.group(1) if m else (text or "")
+    return _ATTACHED.sub("", text).strip()
 
 
 def request_snapshot(body: dict) -> dict:
