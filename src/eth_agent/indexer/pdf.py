@@ -63,6 +63,7 @@ class PdfDoc:
 
 def _norm(s: str) -> str:
     # NFKC: PDF-Ligaturen (ﬁ, ﬀ) zu normalen Buchstaben, damit Suche und Titel stimmen
+    s = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", s)
     return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", s)).strip()
 
 

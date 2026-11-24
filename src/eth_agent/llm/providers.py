@@ -74,11 +74,13 @@ class CodexProvider:
                 cmd += ["-m", self.model]
             if effort:
                 cmd += ["-c", f'model_reasoning_effort="{effort}"']
+            # Prompt immer über stdin ("-"): keine Längengrenze der Kommandozeile, nicht in der Prozessliste.
+            # "-" steht vor -i, damit es nicht als weiterer Bildpfad gelesen wird.
+            cmd += self.extra_args + ["-"]
             for img in images or []:
                 cmd += ["-i", str(Path(img).resolve())]
-            cmd += self.extra_args + [prompt]
             try:
-                p = _run(cmd, timeout, cwd=tmp)
+                p = _run(cmd, timeout, cwd=tmp, stdin=clean_prompt(prompt))
             except subprocess.TimeoutExpired:
                 return LLMResult(self.name, "", False, time.monotonic() - t0, error=f"Timeout nach {timeout}s")
             except FileNotFoundError:
@@ -96,6 +98,14 @@ class CodexProvider:
 def _codex_tokens(log: str) -> int | None:
     m = re.findall(r"tokens used[:\s]*([\d,']+)", log, re.I)
     return int(re.sub(r"\D", "", m[-1])) if m else None
+
+
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def clean_prompt(prompt: str) -> str:
+    """Steuerzeichen aus PDF-Text entfernen (ein Null-Byte bricht jeden Prozessaufruf ab)."""
+    return _CONTROL.sub("", prompt)
 
 
 class ClaudeProvider:
@@ -126,7 +136,7 @@ class ClaudeProvider:
         with tempfile.TemporaryDirectory(prefix="eth-agent-claude-") as tmp:
             try:
                 # Prompt über stdin: kein Längenproblem mit der Kommandozeile.
-                p = _run(cmd, timeout, cwd=tmp, stdin=prompt)
+                p = _run(cmd, timeout, cwd=tmp, stdin=clean_prompt(prompt))
             except subprocess.TimeoutExpired:
                 return LLMResult(self.name, "", False, time.monotonic() - t0, error=f"Timeout nach {timeout}s")
             except FileNotFoundError:

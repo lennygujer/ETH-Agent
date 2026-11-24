@@ -142,3 +142,28 @@ def test_skills_not_yet_built(course_dir):  # noqa: F811
     agent = _agent(make_cfg(course_dir), codex=FakeProvider("codex"))
     assert "noch nicht gebaut" in agent.handle("/practice physik2").text
     assert "Befehle" in agent.handle("/help").text
+
+
+def test_codex_prompt_via_stdin_without_control_chars(monkeypatch, tmp_path):
+    from pathlib import Path
+
+    from eth_agent.llm import providers as pv
+
+    seen = {}
+
+    def fake_run(cmd, timeout, cwd, stdin=None):
+        seen["cmd"], seen["stdin"] = cmd, stdin
+        out = cmd[cmd.index("--output-last-message") + 1]
+        Path(out).write_text("Antwort", encoding="utf-8")
+        import subprocess
+        return subprocess.CompletedProcess(cmd, 0, "", "tokens used: 1,234")
+
+    monkeypatch.setattr(pv, "_run", fake_run)
+    img = tmp_path / "foto.png"
+    img.write_bytes(b"x")
+    res = pv.CodexProvider().complete("Spin\x00 Text\x07 mit $\\hbar$\n" + "x" * 200_000, effort="low",
+                                      images=[str(img)])
+    assert res.ok and res.text == "Antwort" and res.input_tokens == 1234
+    assert "\x00" not in seen["stdin"] and "\x07" not in seen["stdin"] and "$\\hbar$\n" in seen["stdin"]
+    cmd = seen["cmd"]
+    assert cmd.index("-") < cmd.index("-i") and all(len(a) < 1000 for a in cmd)
