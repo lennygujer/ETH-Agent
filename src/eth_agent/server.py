@@ -74,6 +74,38 @@ def _text_and_images(content: Any, tmpdir: Path) -> tuple[str, list[str]]:
     return "\n".join(texts), images
 
 
+_USER_QUERY = re.compile(r"<user_query>\s*(.*?)\s*</user_query>", re.S)
+
+
+def unwrap_user_text(text: str) -> str:
+    """Open WebUI verpackt Nachrichten mit Dateien manchmal in eine Vorlage (<context>…<user_query>…).
+    Für Befehle wie /check zählt nur, was du geschrieben hast."""
+    m = _USER_QUERY.search(text or "")
+    return m.group(1) if m else text
+
+
+def request_snapshot(body: dict) -> dict:
+    """Aufbau einer Anfrage ohne Bilddaten – zur Fehlersuche in data/logs/last-request.json."""
+    msgs = []
+    for m in body.get("messages") or []:
+        c = m.get("content")
+        if isinstance(c, str):
+            parts = [{"type": "text", "len": len(c), "start": c[:300]}]
+        else:
+            parts = []
+            for part in c or []:
+                if not isinstance(part, dict):
+                    continue
+                if part.get("type") == "text":
+                    t = part.get("text", "")
+                    parts.append({"type": "text", "len": len(t), "start": t[:300]})
+                else:
+                    url = str((part.get("image_url") or {}).get("url", ""))
+                    parts.append({"type": part.get("type"), "url_start": url[:40], "len": len(url)})
+        msgs.append({"role": m.get("role"), "parts": parts})
+    return {"keys": sorted(body.keys()), "files": str(body.get("files"))[:500], "messages": msgs[-4:]}
+
+
 def clean_assistant(text: str) -> str:
     """Statusblock und Quellenliste aus früheren Antworten entfernen (spart Tokens im Verlauf)."""
     text = _THINK.sub("", text)
@@ -146,6 +178,8 @@ def create_app(cfg: Config, agent: Agent, api_key: str | None) -> FastAPI:
             if role not in {"user", "assistant"}:
                 continue
             text, images = _text_and_images(m.get("content"), tmp)
+            if role == "user":
+                text = unwrap_user_text(text)
             if i == len(messages) - 1 and role == "user":
                 last_text, last_images = text, images
             else:
@@ -155,6 +189,15 @@ def create_app(cfg: Config, agent: Agent, api_key: str | None) -> FastAPI:
         if is_helper_task(last_text):
             reply = helper_reply(last_text, history)
             return _respond(cid, model, reply, stream, status=[])
+
+        try:
+            logs = cfg.data_dir / "logs"
+            logs.mkdir(parents=True, exist_ok=True)
+            snap = request_snapshot(body)
+            snap["parsed"] = {"text_start": last_text[:300], "images": len(last_images)}
+            (logs / "last-request.json").write_text(json.dumps(snap, ensure_ascii=False, indent=1), encoding="utf-8")
+        except Exception:      # Protokoll darf nie eine Anfrage verhindern
+            pass
 
         if not stream:
             try:

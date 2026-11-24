@@ -56,3 +56,50 @@ def test_resolve_uebungsstunde_sections(course_dir):  # noqa: F811
     assert any("Übungsstunde gefunden" in s and "1.2, 1.3" in s for s in st)
     assert "Tipp" not in ans.text                                  # keine Tipp-Leiter für Unterlagen
     assert "Verification code:" not in p and "Geprüft" not in ans.render()   # Unterlage erklären: kein Prüfcode
+
+
+def _add_sst_uebungen(tmp):
+    body = 11.0
+    d = tmp / "material" / "Physik 2" / "Übungen"
+    make_pdf(d / "Übung4.pdf", [
+        [("44", 16, True), ("Faltung", 16, True)] + [("Berechne die Faltung von x und h.", body, False)] * 3,
+        [("45", 16, True), ("Fourier-Reihe", 16, True), ("a) Periode bestimmen.", body, False),
+         ("b) Koeffizienten berechnen.", body, False), ("c) Parseval anwenden.", body, False)],
+    ])
+    make_pdf(d / "Übung5.pdf", [
+        [("46", 16, True), ("Abtastung", 16, True)] + [("Bestimme die Nyquist-Rate.", body, False)] * 3,
+    ])
+
+
+def test_resolve_continuous_numbering_and_images(course_dir):  # noqa: F811
+    _add_sst_uebungen(course_dir)
+    cfg = make_cfg(course_dir)
+    cfg.folder_doc_types["übungen"] = "serie"
+    codex = FakeProvider("codex", reply="Tipp.")
+    agent = _agent(cfg, codex=codex, claude=FakeProvider("claude"))
+
+    ref = resolve(agent.store, "physik2", "aufgabe 45 c in ss übungen")
+    assert ref and ref.problem_no == "45" and ref.part == "c" and "Übung4.pdf" in ref.chunks[0].rel_path
+    assert "Parseval" in "\n".join(c.text for c in ref.chunks)
+    ref5 = resolve(agent.store, "physik2", "Übung 5 Aufgabe 46")
+    assert ref5 and "Übung5.pdf" in ref5.chunks[0].rel_path
+    assert resolve(agent.store, "physik2", "Aufgabe 99") is None
+
+    # Bild im normalen Pfad geht an Codex, Prompt erwähnt es
+    img = course_dir / "foto.png"
+    img.write_bytes(b"x")
+    st: list[str] = []
+    agent.handle("aufgabe 45 c in ss übungen", course_id="physik2", images=[str(img)], on_status=st.append)
+    assert codex.images[-1] == [str(img)] and "attached 1 image" in codex.prompts[-1]
+    assert any("Aufgabe gefunden" in s and "Übung4.pdf" in s for s in st)
+
+
+def test_server_unwraps_openwebui_template():
+    from eth_agent.server import request_snapshot, unwrap_user_text
+    wrapped = "### Task:\nRespond …\n<context>\n<source>foto.jpg</source>\n</context>\n<user_query>\n/check aufgabe 45 c\n</user_query>"
+    assert unwrap_user_text(wrapped) == "/check aufgabe 45 c"
+    assert unwrap_user_text("/check x") == "/check x"
+    snap = request_snapshot({"messages": [{"role": "user", "content": [
+        {"type": "text", "text": "/check a"}, {"type": "image_url", "image_url": {"url": "data:image/png;base64," + "A" * 5000}}]}]})
+    parts = snap["messages"][0]["parts"]
+    assert parts[0]["start"] == "/check a" and parts[1]["len"] > 5000 and len(parts[1]["url_start"]) == 40

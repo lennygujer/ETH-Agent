@@ -185,6 +185,13 @@ class Store:
             (course, pair, doc_type, problem_no, problem_no + ".%"))
         return [ChunkRow(*r) for r in rows]
 
+    def chunks_with_problem(self, course: str, problem_no: str) -> list[ChunkRow]:
+        """Alle Chunks mit dieser Aufgabennummer (inkl. Unteraufgaben) im ganzen Fach."""
+        rows = self.db.execute(
+            _CHUNK_SELECT + " WHERE f.course=? AND (c.problem_no=? OR c.problem_no LIKE ?) ORDER BY f.rel_path, c.ord",
+            (course, problem_no, problem_no + ".%"))
+        return [ChunkRow(*r) for r in rows]
+
     def file_chunks(self, course: str, pair: str, doc_type: str) -> list[ChunkRow]:
         """Alle Chunks einer Datei (z. B. einer ganzen Übungsstunde) in Lesereihenfolge."""
         rows = self.db.execute(_CHUNK_SELECT + " WHERE f.course=? AND f.pair_key=? AND c.doc_type=? ORDER BY c.ord",

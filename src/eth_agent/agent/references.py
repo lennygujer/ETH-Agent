@@ -12,7 +12,9 @@ from dataclasses import dataclass
 
 from ..retrieval.store import ChunkRow, Store
 
-_SERIE = re.compile(r"\b(?:serie|exercise\s*sheet|exercise|übungsblatt|uebungsblatt|blatt|ex)\s*_?(\d{1,2})\b", re.I)
+_SERIE = re.compile(r"\b(?:serie|exercise\s*sheet|exercise|übungsblatt|uebungsblatt|blatt|übung|uebung|ex)\s*_?"
+                    r"(?:nr\.?\s*)?(\d{1,2})\b", re.I)
+_PROBLEM_TYPES = ("serie", "uebungsstunde", "pruefung", "sonstiges", "notizen", "buch", "skript")
 _PROBLEM = re.compile(r"\b(?:aufgabe|aufg\.?|problem|task|frage|question|nr\.?)\s*(\d{1,2}(?:\.\d{1,2}){0,2})\s*([a-h])?\)?",
                       re.I)
 _UEBUNG = re.compile(r"\b(?:übungsstunde|uebungsstunde|übungsstd\.?|übungsfolien|exercise\s*class|tutorial|"
@@ -138,16 +140,48 @@ def resolve(store: Store, course: str, question: str) -> Reference | None:
         kind, pair = "pruefung", best["pair_key"]
     else:
         sm = _SERIE.search(question)
-        if not sm:
-            return None
-        n = int(sm.group(1))
-        series = [r for r in files if r["doc_type"] == "serie"
-                  and re.search(rf"(^|\D){n}$", (r["pair_key"] or ""))]
+        series = []
+        if sm:
+            n = int(sm.group(1))
+            series = [r for r in files if r["doc_type"] == "serie"
+                      and re.search(rf"(^|\D){n}$", (r["pair_key"] or ""))]
+        if sm is None and problem_no:
+            # "Aufgabe 45" ohne Blatt: durchnummerierte Aufgaben über alle Blätter
+            return _resolve_by_number(store, course, question, problem_no, part)
         if len(series) != 1:
-            return None
+            return None            # genannte Serie gibt es nicht (eindeutig) -> nicht raten
         kind, pair = "serie", series[0]["pair_key"]
 
     if problem_no is None:
         return Reference(kind, pair, None, part, [])
     chunks = store.problem_chunks(course, pair, kind, problem_no)
     return Reference(kind, pair, problem_no, part, chunks)
+
+
+def _resolve_by_number(store: Store, course: str, question: str, problem_no: str,
+                       part: str | None) -> Reference | None:
+    """Aufgabennummer ohne Blatt (z. B. durchnummerierte SST-Übungen): genau eine Datei mit dieser Aufgabe,
+    bei mehreren entscheiden Wörter aus der Frage, die im Dateinamen vorkommen."""
+    chunks = [c for c in store.chunks_with_problem(course, problem_no) if c.doc_type in _PROBLEM_TYPES]
+    groups: dict[tuple[str, str], list] = {}
+    for c in chunks:
+        groups.setdefault((c.rel_path, c.doc_type), []).append(c)
+    if not groups:
+        return None
+    if len(groups) > 1:
+        words = {w for w in re.findall(r"[a-zäöü]{3,}", question.lower())
+                 if w not in {"aufgabe", "check", "bitte", "erkläre", "löse", "zeige", "von", "und", "der", "die",
+                              "das", "den", "mit", "für", "ich", "mir"}}
+        def score(key):
+            name = key[0].lower().replace("ue", "ü")
+            s = sum(1 for w in words if w.replace("ue", "ü").rstrip("en").rstrip("n") in name)
+            return (s, key[1] == "serie")
+        ranked = sorted(groups, key=score, reverse=True)
+        if score(ranked[0]) == score(ranked[1]):
+            return None            # mehrdeutig -> normale Suche
+        key = ranked[0]
+    else:
+        key = next(iter(groups))
+    found = groups[key]
+    kind = "serie" if key[1] == "serie" else key[1]
+    return Reference(kind, found[0].pair_key, problem_no, part, found)

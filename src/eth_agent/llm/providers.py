@@ -175,6 +175,7 @@ class FakeProvider:
         self.rate_limited = rate_limited
         self.prompts: list[str] = []
         self.efforts: list[str | None] = []
+        self.images: list[list[str] | None] = []
 
     def available(self) -> bool:
         return True
@@ -183,6 +184,7 @@ class FakeProvider:
                  images: list[str] | None = None) -> LLMResult:
         self.prompts.append(prompt)
         self.efforts.append(effort)
+        self.images.append(images)
         if self.fail:
             return LLMResult(self.name, "", False, 0.0, rate_limited=self.rate_limited, error="fake failure")
         text = self.reply(prompt) if callable(self.reply) else str(self.reply)

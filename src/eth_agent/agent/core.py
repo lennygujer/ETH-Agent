@@ -314,14 +314,16 @@ class Agent:
         return ALL_COURSES, message, None
 
     # ------------------------------------------------------------------ Ablauf
-    def _call(self, name: str, prompt: str, r: Route, status: list[str]) -> LLMResult:
+    def _call(self, name: str, prompt: str, r: Route, status: list[str],
+              images: list[str] | None = None) -> LLMResult:
         p = self.providers[name]
         effort = None
         if name == "codex":
             effort = (self.cfg.models.codex_effort_hard if r.rule in {"R4", "R6"}
                       else self.cfg.models.codex_effort_default)
         status.append(f"{name} arbeitet …" + (f" (Denkaufwand: {effort})" if effort else ""))
-        res = p.complete(prompt, timeout=self.cfg.models.timeout_s, effort=effort)
+        imgs = images if (images and getattr(p, "supports_images", False)) else None
+        res = p.complete(prompt, timeout=self.cfg.models.timeout_s, effort=effort, images=imgs)
         self.usage.record(res, skill=r.skill or "answer", rule=r.rule, prompt_tokens_est=est_tokens(prompt))
         return res
 
@@ -452,8 +454,15 @@ class Agent:
         if hints:
             status.append("Tipp-Modus (ganze Lösung: --loesung)")
         prompt = self.build_prompt(course, r, picked, history, hints=hints)
+        if images:
+            prompt += (f"\n\n(The student attached {len(images)} image(s) to this message – usually their own "
+                       "handwritten work or the problem sheet. The images are attached to this request: read them "
+                       "carefully and refer to what they show.)")
+            status.append(f"{len(images)} Bild(er) angehängt")
 
         order = [r.provider] + [p for p in ("codex", "claude") if p != r.provider]
+        if images and r.rule != "R1":      # nur Codex kann Bilder lesen
+            order = sorted(order, key=lambda n: not getattr(self.providers.get(n), "supports_images", False))
         missing = [p for p in order if p not in self.providers or not self.providers[p].available()]
         for p in missing:
             status.append(f"{p} nicht installiert – übersprungen")
@@ -463,7 +472,7 @@ class Agent:
                           status=list(status))
         res = None
         for name in order:
-            res = self._call(name, prompt, r, status)
+            res = self._call(name, prompt, r, status, images=images)
             if res.ok:
                 break
             why = "Limit erreicht" if res.rate_limited else f"Fehler: {(res.error or '')[:200]}"
