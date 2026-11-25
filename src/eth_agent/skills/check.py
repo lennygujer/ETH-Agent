@@ -91,6 +91,7 @@ class CheckReport:
     map_updates: list[tuple[str, str]] = field(default_factory=list)   # (Titel, Status)
     probe_id: int | None = None
     probe_question: str | None = None
+    plan_done: list[int] = field(default_factory=list)    # abgehakte Lernplan-Aufgaben (P…)
 
     def render(self, course_name: str) -> str:
         if not self.ok:
@@ -132,6 +133,9 @@ class CheckReport:
             from ..learner.model import STATUS_ICON, STATUS_LABEL
             out.append("**Lernkarte aktualisiert:** " + " · ".join(
                 f"{STATUS_ICON[st]} {t} ({STATUS_LABEL[st]})" for t, st in self.map_updates))
+        if self.plan_done:
+            out.append("**Lernplan:** " + ", ".join(f"P{n}" for n in self.plan_done) + " erledigt ✅ "
+                       "(`/lernplan` zeigt den Rest)")
         if self.probe_question:
             out.append(f"### Rückfrage #{self.probe_id}\n{self.probe_question}\n\n"
                        "*Antworte einfach in deiner nächsten Nachricht – je genauer du deinen Gedankengang "
@@ -238,7 +242,7 @@ def run_check(agent: "Agent", text: str, *, course_id: str | None = None, images
                                             "erste Zeile (oder nach einer Zeile `---`).")
 
     # 1. Aufgabe -----------------------------------------------------------
-    ref = resolve(agent.store, course.id, inp.task)
+    ref = resolve(agent.store, course.id, inp.task, lambda n: agent.learner.plan_item(course.id, n))
     problem_chunks: list[ChunkRow] = ref.chunks if ref and ref.chunks else []
     official: list[ChunkRow] = agent.store.solution_for(problem_chunks[0]) if problem_chunks else []
     if problem_chunks:
@@ -356,6 +360,15 @@ def run_check(agent: "Agent", text: str, *, course_id: str | None = None, images
     trust = trust_level(bool(official), solutions, grade.get("reference_agreement"))
     _log_error(agent, course.id, label, grade)
 
+    # Lernplan: korrigierte Aufgabe abhaken
+    plan_done: list[int] = []
+    if problem_chunks:
+        c0 = problem_chunks[0]
+        plan_done = agent.learner.mark_plan_done(course.id, c0.pair_key, c0.doc_type, c0.problem_no or "",
+                                                 grade.get("verdict"))
+        if plan_done:
+            say("Lernplan: " + ", ".join(f"P{n}" for n in plan_done) + " abgehakt")
+
     # 7. Lernkarte und Rückfrage (nur bei verlässlicher Referenz) -----------------
     map_updates, probe_id, probe_q = [], None, None
     if trust != "uncertain":
@@ -379,7 +392,7 @@ def run_check(agent: "Agent", text: str, *, course_id: str | None = None, images
     return CheckReport(label, True, trust=trust, grade=grade, grader=grader, student_check=student_check,
                        solutions=solutions, reference_text=reference, reveal=inp.reveal,
                        reveal_blocked=blocked, sources=sources, map_updates=map_updates,
-                       probe_id=probe_id, probe_question=probe_q)
+                       probe_id=probe_id, probe_question=probe_q, plan_done=plan_done)
 
 
 def ensure_skeleton(agent: "Agent", course_id: str) -> int:

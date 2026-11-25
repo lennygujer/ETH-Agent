@@ -94,6 +94,25 @@ Zwischendurch eigene Fragen stellen ist erlaubt. `/plan` zeigt den Plan (blau: a
 die Lektion auch nach einem Umweg zurück. `/weiter` überspringt eine Frage, `/stop` beendet. Unterrichtet wird mit
 Codex (`models.learn_provider: codex`), auf `claude` umstellbar; das andere Modell ist Rückfall.
 
+## Termine und Lernplan
+
+**Termine:** Schreib im Chat einfach, was ansteht – *«Ich habe am 12.12. den Midterm in SST, Stoff: Faltung,
+LTI-Systeme, Fourierreihen»* – oder `/termin …`. Ein kurzer Codex-Aufruf liest Art, Datum und Themen und ordnet die
+Themen den Kapiteln der Lernkarte zu. Danach:
+
+- beim Fachwechsel steht der Countdown mit Stand des Stoffs («17 Tage, 9 Themen, 3 geprüft, 2 wackeln»)
+- `/diagnose` und `/learn` ohne Thema richten sich nach dem Stoff des nächsten Termins
+- `/termine` zeigt alle, `/termine löschen <nr>` entfernt einen, `/termine alle` auch vergangene
+
+**Lernplan:** `/lernplan` sucht zu den Themen des nächsten Termins passende Aufgaben aus Serien, Übungsskripten und
+alten Prüfungen und lässt sie von Codex priorisieren und auf die Tage bis zum Termin verteilen (ca. 90 min/Tag):
+schwache Themen zuerst, Fehlvorstellungen erst mit `/learn` verstehen, Themen gemischt statt blockweise, alte
+Prüfungen gegen Ende, Aufgaben mit Musterlösung bevorzugt. Die Aufgaben heissen P1, P2 …:
+
+- `/check P3` (mit Foto oder Text) korrigiert und hakt P3 im Plan ab
+- `P3 Tipp` gibt Tipps zur Aufgabe
+- `/lernplan` zeigt den gespeicherten Plan mit Fortschritt (ohne Modellaufruf), `/lernplan neu` plant neu
+
 ## OneDrive-Sync
 
 Siehe `docs/sync.md`: entweder holt der Server den ETH-Ordner direkt aus OneDrive (rclone, alle 3 h),

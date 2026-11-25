@@ -271,7 +271,17 @@ def start(agent: "Agent", course: "Course", arg: str, say: Callable[[str], None]
     topic, max_q = parse_args(arg)
     ensure_skeleton(agent, course.id)
     focus = focus_nodes(agent, course.id, topic)
-    say(f"Diagnose {('zu «' + topic + '»') if topic else 'über das ganze Fach'}: {len(focus)} Themen im Fokus")
+    exam_note = ""
+    if not topic:
+        from . import termine as tm
+        exam, scope = tm.focus_for_exam(agent, course.id)
+        if scope:
+            rank = {s: i for i, s in enumerate(["untested", "misconception", "missing", "shaky", "probably", "solid"])}
+            focus = sorted([n for n in scope if n.own_status != "solid"], key=lambda n: rank[n.own_status])[:MAX_FOCUS]
+            exam_note = f"{exam['title']} am {tm.fmt_date(exam['date'])}"
+            say(f"Fokus: Stoff von {exam_note}")
+    say(f"Diagnose {('zu «' + topic + '»') if topic else ('zum Stoff ' + exam_note) if exam_note else 'über das ganze Fach'}: "
+        f"{len(focus)} Themen im Fokus")
     say("Suche Skript und Prüfungsaufgaben …")
     material, sheet, exam = _gather(agent, course.id, course.name, focus, topic)
     did = agent.learner.open_diagnosis(course.id, topic, max_q, _focus_text(focus, topic),
@@ -285,7 +295,8 @@ def start(agent: "Agent", course: "Course", arg: str, say: Callable[[str], None]
         return "Die Diagnose konnte nicht starten (keine gültige Frage vom Modell erhalten). Versuch es nochmal."
     agent.learner.add_diag_item(did, 1, question=q["question"], node_ids=q["node_ids"], fmt=q["format"],
                                 options=q["options"], answer_key=q["answer_key"], discriminates=q["discriminates"])
-    intro = (f"**Diagnose{' · ' + topic if topic else ''}** – bis zu {max_q} kurze Fragen. Es geht ums Messen, "
+    label = topic or (f"Stoff {exam_note}" if exam_note else "")
+    intro = (f"**Diagnose{' · ' + label if label else ''}** – bis zu {max_q} kurze Fragen. Es geht ums Messen, "
              "nicht um Punkte: Raten verfälscht die Karte, «weiss nicht» ist ehrlich und hilfreich.")
     return intro + "\n\n" + _render_question(agent, course.id, did, 1, max_q, q)
 

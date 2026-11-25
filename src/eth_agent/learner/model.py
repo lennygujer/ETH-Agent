@@ -110,6 +110,38 @@ CREATE TABLE IF NOT EXISTS lesson_turns (
     outcome TEXT
 );
 CREATE INDEX IF NOT EXISTS lesson_turns_lesson ON lesson_turns(lesson_id);
+CREATE TABLE IF NOT EXISTS exams (
+    id INTEGER PRIMARY KEY,
+    course TEXT NOT NULL,
+    kind TEXT NOT NULL,            -- midterm | pruefung | test | abgabe | sonstiges
+    title TEXT NOT NULL,
+    date TEXT NOT NULL,            -- YYYY-MM-DD
+    time TEXT,
+    topics TEXT,                   -- JSON-Liste, wie du sie genannt hast
+    node_ids TEXT,                 -- zugeordnete Knoten der Lernkarte
+    note TEXT,
+    ts TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active'
+);
+CREATE TABLE IF NOT EXISTS plans (
+    id INTEGER PRIMARY KEY,
+    course TEXT NOT NULL,
+    exam_id INTEGER,
+    ts TEXT NOT NULL,
+    summary TEXT,
+    advice TEXT,
+    learn_first TEXT,              -- JSON: Themen, die zuerst mit /learn verstanden werden sollten
+    status TEXT NOT NULL DEFAULT 'active'
+);
+CREATE TABLE IF NOT EXISTS plan_items (
+    id INTEGER PRIMARY KEY,
+    plan_id INTEGER NOT NULL,
+    n INTEGER NOT NULL,            -- P1, P2, …
+    pair_key TEXT, doc_type TEXT, problem_no TEXT, rel_path TEXT, label TEXT,
+    node_id TEXT, priority INTEGER, why TEXT, minutes INTEGER, day TEXT,
+    done_ts TEXT, outcome TEXT
+);
+CREATE INDEX IF NOT EXISTS plan_items_plan ON plan_items(plan_id);
 """
 
 OUTCOMES = {"correct", "partial", "wrong", "misconception", "slip"}
@@ -493,6 +525,97 @@ class LearnerStore:
                 out.append({"source": "rueckfrage", "question": q, "answer": a, "confidence": None,
                             "outcome": None, "feedback": None})
         return out[:limit]
+
+    # ------------------------------------------------------------------ Prüfungstermine
+    _EXAM_COLS = ("id", "course", "kind", "title", "date", "time", "topics", "node_ids", "note", "status")
+
+    def _exam(self, r) -> dict:
+        d = dict(zip(self._EXAM_COLS, r))
+        d["topics"] = json.loads(d["topics"] or "[]")
+        d["node_ids"] = [x for x in (d["node_ids"] or "").split(",") if x]
+        return d
+
+    def add_exam(self, course: str, kind: str, title: str, date: str, time: str | None, topics: list[str],
+                 node_ids: list[str], note: str | None) -> int:
+        with self.lock:
+            cur = self.db.execute(
+                "INSERT INTO exams (course, kind, title, date, time, topics, node_ids, note, ts) VALUES (?,?,?,?,?,?,?,?,?)",
+                (course, kind, title, date, time, json.dumps(topics, ensure_ascii=False), ",".join(node_ids), note,
+                 now()))
+            self.db.commit()
+            return cur.lastrowid
+
+    def exams(self, course: str | None = None, from_date: str | None = None) -> list[dict]:
+        q = f"SELECT {', '.join(self._EXAM_COLS)} FROM exams WHERE status='active'"
+        args: list = []
+        if course:
+            q += " AND course=?"
+            args.append(course)
+        if from_date:
+            q += " AND date>=?"
+            args.append(from_date)
+        return [self._exam(r) for r in self.db.execute(q + " ORDER BY date, id", args)]
+
+    def get_exam(self, exam_id: int) -> dict | None:
+        r = self.db.execute(f"SELECT {', '.join(self._EXAM_COLS)} FROM exams WHERE id=?", (exam_id,)).fetchone()
+        return self._exam(r) if r else None
+
+    def delete_exam(self, exam_id: int) -> bool:
+        with self.lock:
+            cur = self.db.execute("UPDATE exams SET status='deleted' WHERE id=? AND status='active'", (exam_id,))
+            self.db.commit()
+            return cur.rowcount > 0
+
+    # ------------------------------------------------------------------ Lernpläne
+    _ITEM_COLS = ("id", "n", "pair_key", "doc_type", "problem_no", "rel_path", "label", "node_id", "priority",
+                  "why", "minutes", "day", "done_ts", "outcome")
+
+    def new_plan(self, course: str, exam_id: int | None, summary: str, advice: str, learn_first: list[str],
+                 items: list[dict]) -> int:
+        with self.lock:
+            self.db.execute("UPDATE plans SET status='replaced' WHERE course=? AND status='active'", (course,))
+            cur = self.db.execute(
+                "INSERT INTO plans (course, exam_id, ts, summary, advice, learn_first) VALUES (?,?,?,?,?,?)",
+                (course, exam_id, now(), summary, advice, json.dumps(learn_first, ensure_ascii=False)))
+            pid = cur.lastrowid
+            for i, it in enumerate(items, 1):
+                self.db.execute(
+                    "INSERT INTO plan_items (plan_id, n, pair_key, doc_type, problem_no, rel_path, label, node_id, "
+                    "priority, why, minutes, day) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (pid, i, it["pair_key"], it["doc_type"], it["problem_no"], it["rel_path"], it["label"],
+                     it.get("node_id"), it.get("priority"), it.get("why"), it.get("minutes"), it.get("day")))
+            self.db.commit()
+            return pid
+
+    def active_plan(self, course: str) -> dict | None:
+        r = self.db.execute("SELECT id, course, exam_id, ts, summary, advice, learn_first FROM plans "
+                            "WHERE course=? AND status='active' ORDER BY id DESC LIMIT 1", (course,)).fetchone()
+        if not r:
+            return None
+        d = dict(zip(("id", "course", "exam_id", "ts", "summary", "advice", "learn_first"), r))
+        d["learn_first"] = json.loads(d["learn_first"] or "[]")
+        d["items"] = [dict(zip(self._ITEM_COLS, x)) for x in self.db.execute(
+            f"SELECT {', '.join(self._ITEM_COLS)} FROM plan_items WHERE plan_id=? ORDER BY n", (d["id"],))]
+        return d
+
+    def plan_item(self, course: str, n: int) -> dict | None:
+        plan = self.active_plan(course)
+        return next((it for it in plan["items"] if it["n"] == n), None) if plan else None
+
+    def mark_plan_done(self, course: str, pair_key: str, doc_type: str, problem_no: str, outcome: str | None
+                       ) -> list[int]:
+        """Aufgabe im aktiven Lernplan abhaken (nach /check). Gibt die Nummern (P…) zurück."""
+        plan = self.active_plan(course)
+        if not plan or not problem_no:
+            return []
+        top = problem_no.split(".")[0]
+        hits = [it for it in plan["items"] if it["pair_key"] == pair_key and it["doc_type"] == doc_type
+                and (it["problem_no"] or "").split(".")[0] == top]
+        with self.lock:
+            for it in hits:
+                self.db.execute("UPDATE plan_items SET done_ts=?, outcome=? WHERE id=?", (now(), outcome, it["id"]))
+            self.db.commit()
+        return [it["n"] for it in hits]
 
     # ------------------------------------------------------------------ für Prompts
     def outline(self, course: str, max_nodes: int = 250) -> str:

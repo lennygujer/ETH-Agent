@@ -118,7 +118,19 @@ def _resolve_uebung(store: Store, course: str, question: str, files) -> Referenc
     return Reference("uebungsstunde", pair, ", ".join(secs), None, chunks)
 
 
-def resolve(store: Store, course: str, question: str) -> Reference | None:
+_PLAN_REF = re.compile(r"(?<![\w.])[Pp](\d{1,2})(?:\s*([a-h])\)?)?(?![\w.])")
+
+
+def resolve(store: Store, course: str, question: str, plan_lookup=None) -> Reference | None:
+    """plan_lookup(n) -> Lernplan-Eintrag P<n> (dict mit pair_key, doc_type, problem_no) oder None."""
+    if plan_lookup is not None:
+        pm_ = _PLAN_REF.search(question)
+        if pm_:
+            item = plan_lookup(int(pm_.group(1)))
+            if item:
+                chunks = store.problem_chunks(course, item["pair_key"], item["doc_type"], item["problem_no"])
+                if chunks:
+                    return Reference(item["doc_type"], item["pair_key"], item["problem_no"], pm_.group(2), chunks)
     files = [r for r in store.files(course) if r["status"] != "placeholder"]
     ub = _resolve_uebung(store, course, question, files)
     if ub is not None:

@@ -215,7 +215,12 @@ def _map_lines(agent: "Agent", course_id: str, node_ids: list[str]) -> list[str]
 
 # ---------------------------------------------------------------------- Ablauf
 def pick_topic(agent: "Agent", course_id: str) -> Node | None:
-    spots = weak_spots(agent.learner.nodes(course_id), limit=1)
+    """Dringendste Schwäche – zuerst im Stoff des nächsten Prüfungstermins."""
+    from . import termine as tm
+    _, scope = tm.focus_for_exam(agent, course_id)
+    spots = weak_spots(scope, limit=1) if scope else []
+    if not spots:
+        spots = weak_spots(agent.learner.nodes(course_id), limit=1)
     return spots[0] if spots else None
 
 

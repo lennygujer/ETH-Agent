@@ -153,12 +153,13 @@ class Agent:
         """Gibt [(Chunk, Label)] und eine Beschreibung des aufgelösten Verweises zurück."""
         picked: list[tuple[ChunkRow, str | None]] = []
         ref_desc = None
-        ref = resolve(self.store, course.id, question) if course.id else None
+        plan_lookup = (lambda n: self.learner.plan_item(course.id, n)) if course.id else None
+        ref = resolve(self.store, course.id, question, plan_lookup) if course.id else None
         if course.id and (ref is None or not ref.chunks) and history:
             # Folgefrage ("noch ein Tipp", "zeig die ganze Lösung"): Aufgabe aus dem Verlauf übernehmen
             for t in reversed(history):
                 if t.role == "user":
-                    prev = resolve(self.store, course.id, t.text)
+                    prev = resolve(self.store, course.id, t.text, plan_lookup)
                     if prev and prev.chunks:
                         ref = prev
                         break
@@ -295,6 +296,11 @@ class Agent:
             if not rest:
                 txt = (f"Fach gewechselt: **{c.label}**. Frag los." if c.id
                        else "Suche jetzt wieder in **allen Fächern**.")
+                if c.id:
+                    from ..skills.termine import countdown_line
+                    cd = countdown_line(self, c.id)
+                    if cd:
+                        txt += "\n\n" + cd + " · `/lernplan` zeigt, was du bis dahin lösen solltest."
                 return c, "", Answer(txt, r0, prerendered=True)
             return c, rest, None
         if course_id:
@@ -393,6 +399,11 @@ class Agent:
         holder["course"] = course
         if early is not None:
             return early
+        from ..skills import termine as tm
+        if not message.lstrip().startswith(("/", "!", "@")) and tm.looks_like_exam(message):
+            text = tm.add_from_text(self, course, message, status.append)
+            return Answer(text, Route("TERMIN", "skill", message, skill="termin"), status=list(status),
+                          prerendered=True)
         message, full = wants_full_solution(message)
         r = route(message)
         if r.skill == "check" and full:
@@ -414,6 +425,19 @@ class Agent:
                                   "`/kurse`.", r)
                 text = dg.start(self, course, r.question, status.append)
                 return Answer(text, r, status=list(status), prerendered=True)
+            if r.skill == "termine":
+                return Answer(tm.command(self, course, r.question, status.append), r, status=list(status),
+                              prerendered=True)
+            if r.skill == "termin":
+                text = tm.add_from_text(self, course, r.question, status.append) if r.question else \
+                    "Beispiel: `/termin Midterm am 12.12.2026, Stoff: Faltung, LTI-Systeme`"
+                return Answer(text, r, status=list(status), prerendered=True)
+            if r.skill in {"lernplan", "uebungsplan", "übungsplan"}:
+                if not course.id:
+                    return Answer("Für den Lernplan bitte zuerst ein Fach wählen, z. B. `/sst`.", r)
+                from ..skills import lernplan as lp
+                return Answer(lp.command(self, course, r.question, status.append), r, status=list(status),
+                              prerendered=True)
             if r.skill in {"learn", "lernen"}:
                 if not course.id:
                     return Answer("Für `/learn` bitte zuerst ein Fach wählen, z. B. `/physik`. Alle Fächer: "
@@ -518,5 +542,11 @@ HELP = """**ETH-Agent – Befehle**
   `/stop` beendet.
 - Tipp für `/check`, `/diagnose` und `/learn`: Gedankengang mitschreiben und `Sicherheit: 70%` angeben – beides
   macht die Karte genauer.
+- **Termine:** Schreib einfach «Ich habe am 12.12. den Midterm, Stoff: Faltung, LTI-Systeme» (oder `/termin …`).
+  `/termine` zeigt alle mit Countdown, `/termine löschen <nr>` entfernt einen. `/diagnose`, `/learn` und
+  `/lernplan` richten sich dann nach dem Stoff des nächsten Termins.
+- **Lernplan:** `/lernplan` erstellt eine priorisierte Liste mit Aufgaben aus deinen Serien, Übungsskripten und
+  alten Prüfungen bis zum Termin (P1, P2 …). `/check P3` korrigiert und hakt ab, `P3 Tipp` gibt Tipps,
+  `/lernplan neu` plant neu.
 - Geplant: `/practice`.
 """
