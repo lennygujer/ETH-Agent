@@ -134,3 +134,28 @@ def test_partial_attempt_rendering(course_dir):  # noqa: F811
     assert "**Punkte (bearbeitete Teile), geschätzt: 4 / 3**" in out
     assert "*Nicht bearbeitet:* b), c)" in out
     assert "Grade ONLY the sub-tasks the student actually attempted" in claude.prompts[-1]
+
+
+def test_check_named_file_and_mismatch(course_dir):  # noqa: F811
+    from test_indexer import make_pdf
+    body = 11.0
+    make_pdf(course_dir / "material" / "Physik 2" / "Exercises" / "Exercise_Session_5.pdf", [
+        [("1", 16, True), ("MOSFET operating point", 16, True)] + [("Find the DC operating point.", body, False)] * 3,
+        [("2", 16, True), ("Small-signal model", 16, True)] + [("Draw the small-signal model.", body, False)] * 3,
+    ])
+    cfg = make_cfg(course_dir)
+    claude = FakeProvider("claude", reply=grade_json(
+        attempt_matches_problem=False, mismatch_note="Das Foto zeigt eine MOSFET-Rechnung.", points_max=0,
+        correct_parts=[], concepts=[{"name": "MOSFET-Lastgerade", "outcome": "correct", "evidence": "x"}]))
+    agent = _agent(cfg, codex=FakeProvider("codex", reply=SOLVE_OK), claude=claude)
+
+    # Aufgabe 5 gibt es nur in einer Prüfung, nicht in der genannten Datei -> klare Meldung, nicht die Prüfung
+    out = agent.handle("/check exercise_Session_5 aufgabe 5\nmein Weg").text
+    assert "In **Exercise_Session_5.pdf** gibt es keine Aufgabe 5" in out and "Erkannte Aufgaben: 1, 2" in out
+    assert not claude.prompts
+    assert "Welche Aufgabe" in agent.handle("/check exercise_Session_5\nmein Weg").text
+
+    # Versuch passt nicht zur Aufgabe -> keine Punkte, nichts in die Lernkarte
+    out2 = agent.handle("/check Prüfung 2024 Aufgabe 2\nirgendwas", course_id="physik2").text
+    assert "passt nicht zu" in out2 and "MOSFET-Rechnung" in out2
+    assert not any(n.evidence for n in agent.learner.nodes("physik2"))

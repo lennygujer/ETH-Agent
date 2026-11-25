@@ -141,6 +141,11 @@ def resolve(store: Store, course: str, question: str, plan_lookup=None) -> Refer
     pm = _PROBLEM.search(question)
     problem_no = pm.group(1) if pm else None
     part = pm.group(2).lower() if pm and pm.group(2) else None
+    if file_hint(question):
+        # Datei ausdrücklich genannt ("exercise_Session_5 aufgabe 5"): nur dort suchen, nicht im ganzen Fach
+        by_file = _resolve_file(store, course, question, files, problem_no, part)
+        if by_file is not None:
+            return by_file
     named = _resolve_named(store, course, question, files, problem_no, part)
     if named is not None and named.chunks:
         return named
@@ -254,11 +259,14 @@ def _resolve_file(store: Store, course: str, question: str, files, problem_no: s
     if len(scored) > 1 and abs(scored[0][0] - scored[1][0]) < 1e-9:
         return None
     r = scored[0][1]
+    whole = store.chunks_of_file(course, r["rel_path"])
     if problem_no:
         chunks = store.problem_chunks(course, r["pair_key"], r["doc_type"], problem_no)
         if chunks:
             return Reference(r["doc_type"], r["pair_key"], problem_no, part, chunks)
-    return Reference("datei", r["pair_key"], None, part, store.chunks_of_file(course, r["rel_path"]))
+        # Aufgabe nicht in dieser Datei: ganze Datei mit der gesuchten Nummer zurück (Aufrufer entscheidet)
+        return Reference("datei", r["pair_key"], problem_no, part, whole)
+    return Reference("datei", r["pair_key"], None, part, whole)
 
 
 def _resolve_by_number(store: Store, course: str, question: str, problem_no: str,

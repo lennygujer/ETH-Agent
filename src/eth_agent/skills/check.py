@@ -243,6 +243,19 @@ def run_check(agent: "Agent", text: str, *, course_id: str | None = None, images
 
     # 1. Aufgabe -----------------------------------------------------------
     ref = resolve(agent.store, course.id, inp.task, lambda n: agent.learner.plan_item(course.id, n))
+    if ref is not None and ref.kind == "datei" and ref.problem_no and ref.chunks:
+        # Datei gefunden, aber diese Aufgabennummer nicht darin
+        have = sorted({(c.problem_no or "").split(".")[0] for c in ref.chunks if c.problem_no},
+                      key=lambda x: (len(x), x))
+        name = ref.chunks[0].file_name
+        return CheckReport(inp.task, False, f"In **{name}** gibt es keine Aufgabe {ref.problem_no}."
+                           + (f" Erkannte Aufgaben: {', '.join(have)}." if have else
+                              " Ich erkenne dort keine nummerierten Aufgaben – falls die Datei schon länger "
+                              "indexiert ist: `eth-agent index --course <fach> --force` liest sie neu ein.")
+                           + " Alternativ: Aufgabentext, dann `---`, dann dein Versuch.")
+    if ref is not None and ref.kind == "datei" and not ref.problem_no:
+        return CheckReport(inp.task, False, f"Welche Aufgabe aus **{ref.chunks[0].file_name if ref.chunks else inp.task}"
+                                            f"**? Z. B. `/check {inp.task} Aufgabe 2`.")
     problem_chunks: list[ChunkRow] = ref.chunks if ref and ref.chunks else []
     official: list[ChunkRow] = agent.store.solution_for(problem_chunks[0]) if problem_chunks else []
     if problem_chunks:
@@ -347,6 +360,17 @@ def run_check(agent: "Agent", text: str, *, course_id: str | None = None, images
             say(f"{name} fehlgeschlagen" + (f": {res.error[:200]}" if res.error else ""))
     if not grade:
         return CheckReport(label, False, "Bewertung fehlgeschlagen (keine auswertbare Antwort).")
+
+    # Versuch gehört gar nicht zu dieser Aufgabe (falsche Aufgabe aufgelöst oder falsches Foto)?
+    if grade.get("attempt_matches_problem") is False or (
+            not grade.get("points_max") and not grade.get("correct_parts") and grade.get("not_attempted")):
+        note = str(grade.get("mismatch_note") or "").strip()
+        return CheckReport(label, False,
+                           f"**Dein Versuch passt nicht zu {label}.**"
+                           + (f" {note}" if note else "")
+                           + "\n\nNichts wurde bewertet oder in die Lernkarte eingetragen. Stimmt die Aufgabe? Gib "
+                             "Datei und Nummer genauer an (z. B. `/check Exercise_Session_5 Aufgabe 2`) oder "
+                             "schick das passende Foto.")
 
     # 4. Endergebnis des Studenten per Code prüfen -----------------------------
     student_check = CheckResult("none", "")

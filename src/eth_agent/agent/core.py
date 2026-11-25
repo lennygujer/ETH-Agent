@@ -173,7 +173,8 @@ class Agent:
             whole = ref.kind == "datei"
             lab = "DOKUMENT" if whole else "UNTERLAGE"
             name = ref.chunks[0].file_name
-            secs = f", Abschnitte {ref.problem_no}" if ref.problem_no else " (ganz)"
+            secs = (f" (Aufgabe {ref.problem_no} dort nicht gefunden – ganzes Dokument)" if whole and ref.problem_no
+                    else f", Abschnitte {ref.problem_no}" if ref.problem_no else " (ganz)")
             ref_desc = f"{'Datei' if whole else 'Übungsstunde'} '{name}'{secs}"
             used = 0
             for c in ref.chunks:

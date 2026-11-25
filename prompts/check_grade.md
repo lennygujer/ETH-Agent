@@ -56,8 +56,14 @@ Current learner map of this course (id | title | status):
 Return ONLY one fenced ```json block with this structure (all text fields in {output_language_name},
 mathematics in LaTeX):
 
+First decide whether the attempt (text and/or photo) belongs to THIS problem at all. If it clearly works on a
+different problem (other circuit, other quantities, other topic), set "attempt_matches_problem": false, describe in
+"mismatch_note" what the attempt is about instead, and leave points, errors and concepts empty.
+
 ```json
 {
+  "attempt_matches_problem": true,
+  "mismatch_note": "",
   "reference_agreement": "agree | disagree | single | official",
   "reference_disagreement_note": "if the two reference solutions disagree: what differs and which you trust, else empty",
   "points_awarded": 0,

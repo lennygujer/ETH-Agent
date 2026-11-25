@@ -310,6 +310,14 @@ class LearnerStore:
         return after - before
 
     # ------------------------------------------------------------------ Belege
+    def forget(self, course: str, ref_part: str) -> int:
+        """Belege einer falsch zugeordneten Korrektur entfernen (problem_ref enthält ref_part)."""
+        with self.lock:
+            cur = self.db.execute("DELETE FROM evidence WHERE course=? AND problem_ref LIKE ?",
+                                  (course, f"%{ref_part}%"))
+            self.db.commit()
+            return cur.rowcount
+
     def add_evidence(self, course: str, node_id: str, kind: str, outcome: str, *,
                      confidence: float | None = None, detail: str | None = None,
                      problem_ref: str | None = None) -> None:

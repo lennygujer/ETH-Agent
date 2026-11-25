@@ -242,6 +242,31 @@ def cmd_serve(cfg, args) -> int:
     return 0
 
 
+def cmd_forget(cfg, args) -> int:
+    """Belege einer falschen Korrektur aus Lernkarte und Fehlerkatalog entfernen."""
+    import json as _json
+    from .learner.model import LearnerStore
+    store = LearnerStore(cfg.data_dir / "learner.sqlite")
+    n = store.forget(args.course, args.ref)
+    path = cfg.data_dir / "profile" / "errors.jsonl"
+    removed = 0
+    if path.exists():
+        keep = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                e = _json.loads(line)
+            except _json.JSONDecodeError:
+                keep.append(line)
+                continue
+            if e.get("course") == args.course and args.ref in (e.get("problem_ref") or ""):
+                removed += 1
+            else:
+                keep.append(line)
+        path.write_text("\n".join(keep) + ("\n" if keep else ""), encoding="utf-8")
+    print(f"{n} Belege aus der Lernkarte und {removed} Einträge aus dem Fehlerkatalog entfernt.")
+    return 0
+
+
 def cmd_usage(cfg, args) -> int:
     from .llm.usage import UsageLog
 
@@ -305,6 +330,10 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--port", type=int, default=8100)
     s.add_argument("--keyword-only", action="store_true")
 
+    s = sub.add_parser("forget", help="Belege einer falschen Korrektur entfernen")
+    s.add_argument("--course", required=True)
+    s.add_argument("--ref", required=True, help="Teil der Aufgabenangabe, z. B. 'Exam2024fall.pdf, Aufgabe 5'")
+
     s = sub.add_parser("usage", help="Cloud-Aufrufe und Tokens anzeigen")
     s.add_argument("--hours", type=int, default=5)
 
@@ -320,7 +349,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"(Fach: {course.name} → --course {course.id})", file=sys.stderr)
         args.course = course.id
     handler = {"index": cmd_index, "search": cmd_search, "show": cmd_show, "files": cmd_files,
-               "chat": cmd_chat, "ask": cmd_ask, "check": cmd_check, "serve": cmd_serve, "usage": cmd_usage}[args.cmd]
+               "chat": cmd_chat, "ask": cmd_ask, "check": cmd_check, "serve": cmd_serve, "usage": cmd_usage,
+               "forget": cmd_forget}[args.cmd]
     return handler(cfg, args)
 
 
