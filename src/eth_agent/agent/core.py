@@ -6,7 +6,7 @@ Terminal-Chat und (später) der FastAPI-Server rufen dieselbe Funktion auf.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import replace, dataclass, field
 from pathlib import Path
 from typing import Callable
 
@@ -16,7 +16,7 @@ from ..llm.providers import ClaudeProvider, CodexProvider, LLMResult, Provider
 from ..llm.usage import UsageLog
 from ..retrieval.search import search
 from ..retrieval.store import ChunkRow, Store
-from .references import resolve
+from .references import file_hint, resolve
 from .routing import SKILLS, Route, est_tokens, route
 
 PROMPTS = REPO_ROOT / "prompts"
@@ -100,7 +100,7 @@ class Answer:
             footer.append(f"Geprüft: {self.check.badge}")
             if self.check.status == "pass":
                 footer[0] += " (Prüfcode vom selben Modell)"
-        elif not any(lab == "UNTERLAGE" for lab in self.labels):
+        elif not any(lab in {"UNTERLAGE", "DOKUMENT"} for lab in self.labels):
             footer.append("Geprüft: ungeprüft")
         if self.provider:
             footer.append(f"Modell: {self.provider}")
@@ -155,7 +155,12 @@ class Agent:
         ref_desc = None
         plan_lookup = (lambda n: self.learner.plan_item(course.id, n)) if course.id else None
         ref = resolve(self.store, course.id, question, plan_lookup) if course.id else None
-        if course.id and (ref is None or not ref.chunks) and history:
+        hint = file_hint(question)
+        if course.id and hint and (ref is None or not ref.chunks):
+            # Datei beim Namen genannt, aber nicht im Index: nicht still auf eine frühere Aufgabe ausweichen
+            status.append(f"Datei «{hint}» nicht im Index dieses Fachs gefunden")
+            ref_desc = f"Datei '{hint}' nicht im Index"
+        elif course.id and (ref is None or not ref.chunks) and history:
             # Folgefrage ("noch ein Tipp", "zeig die ganze Lösung"): Aufgabe aus dem Verlauf übernehmen
             for t in reversed(history):
                 if t.role == "user":
@@ -163,18 +168,21 @@ class Agent:
                     if prev and prev.chunks:
                         ref = prev
                         break
-        if ref and ref.chunks and ref.kind == "uebungsstunde":
-            # Unterlage zum Erklären, keine Aufgabe: keine Tipp-Leiter, keine Musterlösung
+        if ref and ref.chunks and ref.kind in {"uebungsstunde", "datei"}:
+            # Unterlage oder ganzes Dokument: erklären/beantworten, keine Tipp-Leiter, keine Musterlösung
+            whole = ref.kind == "datei"
+            lab = "DOKUMENT" if whole else "UNTERLAGE"
+            name = ref.chunks[0].file_name
             secs = f", Abschnitte {ref.problem_no}" if ref.problem_no else " (ganz)"
-            ref_desc = f"Übungsstunde '{ref.file_pair_key}'{secs}"
+            ref_desc = f"{'Datei' if whole else 'Übungsstunde'} '{name}'{secs}"
             used = 0
             for c in ref.chunks:
                 if used + est_tokens(c.text) > CONTEXT_BUDGET - 2_000 and picked:
-                    status.append("Übungsstunde gekürzt – für Details nach einzelnen Abschnitten fragen")
+                    status.append(f"{name} gekürzt – für Details nach einzelnen Aufgaben fragen")
                     break
-                picked.append((c, "UNTERLAGE"))
+                picked.append((c, lab))
                 used += est_tokens(c.text)
-            status.append(f"Übungsstunde gefunden: {ref.chunks[0].citation(course.name)}"
+            status.append(f"{'Datei' if whole else 'Übungsstunde'} gefunden: {name}"
                           + (f" (Abschnitte {ref.problem_no})" if ref.problem_no else f", {len(picked)} Abschnitte"))
         elif ref and ref.chunks:
             ref_desc = f"{ref.kind} '{ref.file_pair_key}', Aufgabe {ref.problem_no}"
@@ -186,7 +194,7 @@ class Agent:
                 picked += [(s, "MUSTERLÖSUNG") for s in sols]
 
         query = question
-        if ref and ref.chunks and ref.kind == "uebungsstunde":
+        if ref and ref.chunks and ref.kind in {"uebungsstunde", "datei"}:
             query = f"{question} " + " ".join((c.title or "") for c in ref.chunks[:4])
         elif ref and ref.chunks:
             # Mit dem Aufgabentext suchen, nicht mit "Serie 3 Aufgabe 1".
@@ -219,8 +227,8 @@ class Agent:
         """Tipps statt Lösung: bei Aufgaben (Verweis oder Rechen-/Beweisauftrag), ausser ganze Lösung gewünscht."""
         if full or course.solution_mode == "full":
             return False
-        if any(lab == "UNTERLAGE" for _, lab in picked):
-            return False                 # Übungsstunden-Unterlagen werden erklärt, nicht als Aufgabe behandelt
+        if any(lab in {"UNTERLAGE", "DOKUMENT"} for _, lab in picked):
+            return False                 # Unterlagen/ganze Dokumente: Frage beantworten, keine Tipp-Leiter
         is_problem = any(lab == "AUFGABE" for _, lab in picked) or r.rule == "R4"
         return is_problem
 
@@ -237,13 +245,19 @@ class Agent:
         else:
             policy = ("Solution policy: no official solution is available for this question. Work carefully, "
                       "check limits, units and signs yourself.")
+        if any(lab == "DOKUMENT" for _, lab in picked):
+            policy += ("\n\nThe student asks about a whole document by name (marked DOKUMENT; its content is "
+                       "included as far as it fits). Answer their question about this document directly – e.g. give "
+                       "an overview, priorities or an assessment of each problem as asked. Do not solve the "
+                       "problems unless asked. Do not claim the document is missing when DOKUMENT excerpts are "
+                       "present.")
         if any(lab == "UNTERLAGE" for _, lab in picked):
             policy += ("\n\nThe student asks about specific sections of a tutorial-session handout (marked UNTERLAGE; "
                        "all requested sections are included). Explain exactly those sections in their order: what "
                        "each one sets out to show, the key idea and each formula with what its symbols mean, and how "
                        "it connects to the previous section. Do not claim that parts are missing when they are "
                        "marked UNTERLAGE.")
-        verify = r.tool_verify and not hints and not any(lab == "UNTERLAGE" for _, lab in picked)
+        verify = r.tool_verify and not hints and not any(lab in {"UNTERLAGE", "DOKUMENT"} for _, lab in picked)
         check = _template("check_block.md") if verify else ""
         hist = ""
         if history:
@@ -474,6 +488,11 @@ class Agent:
         if course.id:
             status.append(f"Fach: {course.label}")
         picked, ref_desc = self._gather(course, r.question, history, status)
+        if ref_desc and ref_desc.endswith("nicht im Index"):
+            r = replace(r, question=r.question + (
+                f"\n\n(Note from the agent: the file {ref_desc.split(chr(39))[1]!r} named by the student is NOT in "
+                "the index of this course. Say so in one sentence, suggest checking the OneDrive sync with "
+                "`eth-agent files`, and answer only what the excerpts below allow.)"))
         hints = self.hints_mode(course, r, picked, full)
         if hints:
             status.append("Tipp-Modus (ganze Lösung: --loesung)")
@@ -509,7 +528,7 @@ class Agent:
                           sources=[c for c, _ in picked], llm=res, prompt=prompt, status=list(status))
 
         text, chk = res.text, CheckResult("none", "")
-        if r.tool_verify and not hints and not any(lab == "UNTERLAGE" for _, lab in picked):
+        if r.tool_verify and not hints and not any(lab in {"UNTERLAGE", "DOKUMENT"} for _, lab in picked):
             text, chk = check_answer(res.text)
             if chk.status != "none":
                 status.append(f"Prüfcode: {chk.badge}")

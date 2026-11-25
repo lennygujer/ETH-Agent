@@ -128,3 +128,43 @@ def test_uebungsskript_with_solutions_in_same_file(course_dir):  # noqa: F811
     assert sol and sol[0].doc_type == "serie_loesung" and "Faltung" in sol[0].text
     ref44 = resolve(agent.store, "physik2", "Aufgabe 44")
     assert ref44 and "Echo" in ref44.chunks[0].text
+
+
+def test_file_by_name_with_typo_and_whole_document(course_dir):  # noqa: F811
+    from eth_agent.agent.references import file_hint
+    body = 11.0
+    d = course_dir / "material" / "Physik 2" / "Exercises"
+    make_pdf(d / "Exercise_Session_5.pdf", [
+        [("1", 16, True), ("MOSFET operating point", 16, True)] + [("Find the DC operating point.", body, False)] * 3,
+        [("2", 16, True), ("Small-signal model", 16, True)] + [("Draw the small-signal model, find Av.", body, False)] * 3,
+    ])
+    make_pdf(d / "Exercise_Session_15.pdf", [
+        [("1", 16, True), ("Oscillators", 16, True)] + [("Barkhausen criterion.", body, False)] * 3],
+    )
+    assert file_hint("sieh dir ecercise_Session_5 an") == "ecercise_Session_5"
+    assert file_hint("berechne x_1 und lambda_max") is None
+    cfg = make_cfg(course_dir)
+    codex = FakeProvider("codex", reply="Prioritäten …")
+    agent = _agent(cfg, codex=codex, claude=FakeProvider("claude"))
+
+    q = ("sieh dir ecercise_Session_5 an. gib mir eine prioritäten liste, aller aufgaben von 1-5. wobei 1 nicht "
+         "wichtig und 5 sehr wichtig ist.")
+    ref = resolve(agent.store, "physik2", q)
+    assert ref and ref.kind == "datei" and {c.file_name for c in ref.chunks} == {"Exercise_Session_5.pdf"}
+    assert len(ref.chunks) == 2
+    ref3 = resolve(agent.store, "physik2", "Exercise Session 5 Aufgabe 2")
+    assert ref3 and ref3.problem_no == "2" and "small-signal" in ref3.chunks[0].text.lower()
+    assert "Oscillators" in resolve(agent.store, "physik2", "exercise_session_15").chunks[0].text
+
+    st: list[str] = []
+    ans = agent.handle(q, course_id="physik2", on_status=st.append)
+    p = codex.prompts[-1]
+    assert "DOKUMENT" in p and "Find the DC operating point" in p and "Draw the small-signal model" in p
+    assert "Do not solve the problems unless asked" in p
+    assert any("Datei gefunden: Exercise_Session_5.pdf" in s for s in st)
+    assert not any("Tipp-Modus" in s for s in st) and "noch ein Tipp" not in ans.render()
+
+    # genannte Datei fehlt -> klare Meldung statt Raten
+    st2: list[str] = []
+    agent.handle("was ist in Exercise_Session_9 wichtig", course_id="physik2", on_status=st2.append)
+    assert any("nicht im Index" in s for s in st2) and "is NOT in the index" in codex.prompts[-1]

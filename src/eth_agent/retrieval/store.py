@@ -196,6 +196,10 @@ class Store:
             (course, problem_no, problem_no + ".%"))
         return [ChunkRow(*r) for r in rows]
 
+    def chunks_of_file(self, course: str, rel_path: str) -> list[ChunkRow]:
+        rows = self.db.execute(_CHUNK_SELECT + " WHERE f.course=? AND f.rel_path=? ORDER BY c.ord", (course, rel_path))
+        return [ChunkRow(*r) for r in rows]
+
     def file_chunks(self, course: str, pair: str, doc_type: str) -> list[ChunkRow]:
         """Alle Chunks einer Datei (z. B. einer ganzen Übungsstunde) in Lesereihenfolge."""
         rows = self.db.execute(_CHUNK_SELECT + " WHERE f.course=? AND f.pair_key=? AND c.doc_type=? ORDER BY c.ord",
