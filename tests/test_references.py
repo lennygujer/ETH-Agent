@@ -168,3 +168,36 @@ def test_file_by_name_with_typo_and_whole_document(course_dir):  # noqa: F811
     st2: list[str] = []
     agent.handle("was ist in Exercise_Session_9 wichtig", course_id="physik2", on_status=st2.append)
     assert any("nicht im Index" in s for s in st2) and "is NOT in the index" in codex.prompts[-1]
+
+
+def test_question_headings_and_figure_pages(course_dir):  # noqa: F811
+    """'Question 5.' als Überschrift (Electronic Circuits) und Seitenbild bei Schaltungen."""
+    import pymupdf
+    path = course_dir / "material" / "Physik 2" / "Exercises" / "Exercise_Session_5.pdf"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    doc = pymupdf.open()
+    p1 = doc.new_page()
+    p1.insert_text((50, 60), "Exercise Session 5", fontname="hebo", fontsize=12)
+    p1.insert_text((50, 90), "Question 4. Simple MOS circuit", fontname="hebo", fontsize=12)
+    p1.insert_text((50, 110), "Find the drain current of M1 in the circuit of Figure 4.", fontsize=12)
+    p2 = doc.new_page()
+    p2.insert_text((50, 60), "Question 5. Simple MOS circuit advanced", fontname="hebo", fontsize=12)
+    p2.insert_text((50, 80), "What gate voltage keeps M1 in saturation? What happens if we double R?", fontsize=12)
+    for i in range(20):                                   # "Schaltung" aus Vektorlinien
+        p2.draw_line((100 + 5 * i, 200), (100 + 5 * i, 260))
+    p2.insert_text((50, 300), "Figure 5. Simple MOS circuit", fontsize=12)
+    doc.save(path)
+
+    cfg = make_cfg(course_dir)
+    codex = FakeProvider("codex", reply="Tipp: Sättigung heisst VDS >= VGS - Vth.")
+    agent = _agent(cfg, codex=codex, claude=FakeProvider("claude"))
+    ref = resolve(agent.store, "physik2", "exercise_Session_5 aufgabe 5")
+    assert ref and ref.problem_no == "5" and "double R" in ref.chunks[0].text
+    st: list[str] = []
+    agent.handle("exercise_Session_5 aufgabe 5", course_id="physik2", on_status=st.append)
+    imgs = codex.images[-1]
+    assert imgs and len(imgs) == 1 and imgs[0].endswith(".png")
+    assert "course PDF page(s) of this problem" in codex.prompts[-1]
+    assert any("Abbildung angehängt" in s for s in st)
+    agent.handle("exercise_Session_5 aufgabe 4", course_id="physik2")
+    assert not codex.images[-1]                               # Seite 1 ohne Abbildung

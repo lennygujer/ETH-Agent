@@ -16,6 +16,7 @@ from ..llm.providers import ClaudeProvider, CodexProvider, LLMResult, Provider
 from ..llm.usage import UsageLog
 from ..retrieval.search import search
 from ..retrieval.store import ChunkRow, Store
+from ..indexer.figures import figure_note, page_images
 from .references import file_hint, resolve
 from .routing import SKILLS, Route, est_tokens, route
 
@@ -498,11 +499,17 @@ class Agent:
         if hints:
             status.append("Tipp-Modus (ganze Lösung: --loesung)")
         prompt = self.build_prompt(course, r, picked, history, hints=hints)
-        if images:
-            prompt += (f"\n\n(The student attached {len(images)} image(s) to this message – usually their own "
+        main = [c for c, lab in picked if lab in {"AUFGABE", "UNTERLAGE", "DOKUMENT"}]
+        figs = page_images(self.cfg, course, main, max_pages=3) if (main and course.id) else []
+        if figs:
+            prompt += figure_note(len(figs))
+            status.append(f"{len(figs)} Seite(n) mit Abbildung angehängt")
+            images = figs + list(images or [])
+        if images and len(images) > len(figs):
+            prompt += (f"\n\n(The student attached {len(images) - len(figs)} image(s) to this message – usually their own "
                        "handwritten work or the problem sheet. The images are attached to this request: read them "
                        "carefully and refer to what they show.)")
-            status.append(f"{len(images)} Bild(er) angehängt")
+            status.append(f"{len(images) - len(figs)} Bild(er) angehängt")
 
         order = [r.provider] + [p for p in ("codex", "claude") if p != r.provider]
         if images and r.rule != "R1":      # nur Codex kann Bilder lesen

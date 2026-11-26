@@ -18,10 +18,10 @@ import pymupdf
 _HEADING_NUM = re.compile(r"^(\d+(?:\.\d+){0,3})\.?$")
 _HEADING_NUM_TITLE = re.compile(r"^(\d+(?:\.\d+){0,3})\.?\s+(\S.*)$")
 # "Aufgabe 45", "Lösung 45", "Problem 3.2 (4 Punkte)", "Exercise 2: Title" als Überschrift
-_KEYWORD_HEAD = re.compile(r"^(aufgabe|aufg\.|problem|exercise|task|übung|lösung|loesung|solution)\s+"
+_KEYWORD_HEAD = re.compile(r"^(aufgabe|aufg\.|problem|exercise|question|frage|task|übung|lösung|loesung|solution)\s+"
                            r"(\d+(?:\.\d+){0,2})\s*[∗*†·]?\s*[:.)]?\s*(.*)$", re.I)
 # Zeile, die nur aus "Aufgabe 44∗" besteht: Überschrift, auch wenn nicht (ganz) fett gesetzt
-_KEYWORD_ONLY = re.compile(r"^(aufgabe|problem|exercise|lösung|loesung|solution)\s+\d+(?:\.\d+){0,2}\s*[∗*†·]?$",
+_KEYWORD_ONLY = re.compile(r"^(aufgabe|problem|exercise|question|frage|lösung|loesung|solution)\s+\d+(?:\.\d+){0,2}\s*[∗*†·]?$",
                            re.I)
 _PAGE_NUM = re.compile(r"^\d{1,4}$")
 _TOC_DOTS = re.compile(r"(\.\s){4,}")

@@ -22,6 +22,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Callable
 
 from ..agent.references import resolve
+from ..indexer.figures import figure_note, page_images
 from ..checks.sandbox import CheckResult, check_answer, run_python
 from ..llm.providers import LLMResult
 from ..retrieval.search import search
@@ -257,6 +258,7 @@ def run_check(agent: "Agent", text: str, *, course_id: str | None = None, images
         return CheckReport(inp.task, False, f"Welche Aufgabe aus **{ref.chunks[0].file_name if ref.chunks else inp.task}"
                                             f"**? Z. B. `/check {inp.task} Aufgabe 2`.")
     problem_chunks: list[ChunkRow] = ref.chunks if ref and ref.chunks else []
+    figs: list[str] = []
     official: list[ChunkRow] = agent.store.solution_for(problem_chunks[0]) if problem_chunks else []
     if problem_chunks:
         label = problem_chunks[0].citation(course.name)
@@ -267,6 +269,9 @@ def run_check(agent: "Agent", text: str, *, course_id: str | None = None, images
         points = problem_chunks[0].points
         if points:
             problem += f"\n\n(Point value of this problem in the exam: {_num(points)} points.)"
+        figs = page_images(agent.cfg, course, problem_chunks)
+        if figs:
+            say(f"{len(figs)} Seite(n) mit Abbildung angehängt")
     elif ref is not None or len(inp.task) < 40:
         return CheckReport(inp.task, False, f"Aufgabe „{inp.task}“ nicht im Material gefunden. Gib eine Aufgabe wie "
                                             "*Serie 3 Aufgabe 1* an oder schreibe den Aufgabentext, dann `---`, dann "
@@ -294,6 +299,8 @@ def run_check(agent: "Agent", text: str, *, course_id: str | None = None, images
                     "to \"official\".")
     else:
         avail = [n for n in ("codex", "claude") if n in agent.providers and agent.providers[n].available()]
+        if figs and "codex" in avail:
+            avail = ["codex"]          # nur Codex sieht die Abbildung; Claude ohne Schaltung wäre keine Referenz
         if not avail:
             return CheckReport(label, False, "Weder `codex` noch `claude` ist verfügbar.")
         say("Keine Musterlösung – erstelle Referenz mit " + " und ".join(avail) + " (unabhängig) …")
@@ -302,7 +309,10 @@ def run_check(agent: "Agent", text: str, *, course_id: str | None = None, images
 
         def solve(name: str) -> Solution:
             effort = agent.cfg.models.codex_effort_hard if name == "codex" else None
-            res = agent.providers[name].complete(solve_prompt, timeout=agent.cfg.models.timeout_s, effort=effort)
+            imgs = figs if (figs and name == "codex") else None
+            prompt = solve_prompt + (figure_note(len(figs)) if imgs else "")
+            res = agent.providers[name].complete(prompt, timeout=agent.cfg.models.timeout_s, effort=effort,
+                                                 images=imgs)
             agent.usage.record(res, skill="check-solve", rule="check", prompt_tokens_est=est_tokens(solve_prompt))
             if not res.ok:
                 return Solution(name, "", CheckResult("none", ""), res)
@@ -329,12 +339,16 @@ def run_check(agent: "Agent", text: str, *, course_id: str | None = None, images
             ref_note = "Set reference_agreement to \"single\". Re-derive critical steps yourself before grading."
 
     # 3. Bewertung -------------------------------------------------------------
-    order = ["codex"] if images else ["claude", "codex"]
+    all_images = figs + images
+    order = ["codex"] if all_images else ["claude", "codex"]
     order = [n for n in order if n in agent.providers and agent.providers[n].available()]
     if not order:
         return CheckReport(label, False, "Kein Modell für die Bewertung verfügbar"
-                           + (" (Bilder brauchen Codex)." if images else "."))
+                           + (" (Bilder brauchen Codex)." if all_images else "."))
     attempt = inp.attempt or "(see attached image(s) of the student's handwritten work)"
+    if figs:
+        attempt += (f"\n\n(Images: the first {len(figs)} show the problem page(s) from the course PDF with its "
+                    f"figures; the remaining {len(images)} are the student's own work.)")
     from ..learner.model import parse_confidence
     ensure_skeleton(agent, course.id)
     confidence = parse_confidence(inp.attempt)
@@ -348,7 +362,7 @@ def run_check(agent: "Agent", text: str, *, course_id: str | None = None, images
         say(f"{name} bewertet deinen Versuch …")
         effort = agent.cfg.models.codex_effort_hard if name == "codex" else None
         res = agent.providers[name].complete(grade_prompt, timeout=agent.cfg.models.timeout_s, effort=effort,
-                                             images=images if name == "codex" else None)
+                                             images=all_images if name == "codex" else None)
         agent.usage.record(res, skill="check-grade", rule="check", prompt_tokens_est=est_tokens(grade_prompt))
         if res.ok:
             grade = parse_grade(res.text)
