@@ -113,6 +113,12 @@ Prüfungen gegen Ende, Aufgaben mit Musterlösung bevorzugt. Die Aufgaben heisse
 - `P3 Tipp` gibt Tipps zur Aufgabe
 - `/lernplan` zeigt den gespeicherten Plan mit Fortschritt (ohne Modellaufruf), `/lernplan neu` plant neu
 
+**Verbrauch:** `/verbrauch` (ohne Modellaufruf) zeigt für die letzten 7 Tage, wie viele Cloud-Aufrufe und Tokens
+Codex (ChatGPT-Plus-Kontingent) und Claude (Pro-Kontingent) verbraucht haben – pro Modell, pro Befehl (mit Ø pro
+Nachricht) und pro Tag. `/verbrauch heute`, `/verbrauch 30`. Codex läuft dafür mit `--json` (genaue Zahlen inkl.
+Cache- und Denk-Tokens); ältere Codex-Versionen ohne `--json` werden erkannt und liefern nur eine Gesamtzahl.
+Daten: `data/usage.sqlite` (Tabellen `requests` = Nachrichten, `calls` = Modellaufrufe).
+
 ## OneDrive-Sync
 
 Siehe `docs/sync.md`: entweder holt der Server den ETH-Ordner direkt aus OneDrive (rclone, alle 3 h),
@@ -160,7 +166,7 @@ eth-agent chat                                   # Terminal-Chat (lädt beim Sta
 eth-agent chat --debug                           # zusätzlich Route, Dauer, Tokens, Prüfcode-Ausgabe
 eth-agent ask "Prüfung Aug 2025 Aufgabe 4" --debug
 eth-agent ask "Erkläre den Tunneleffekt" --show-prompt   # zeigt den kompletten Prompt
-eth-agent usage                                  # Cloud-Aufrufe der letzten 5 h
+eth-agent usage                                  # Verbrauch der letzten 7 Tage (--days 1 = heute)
 
 eth-agent check "Serie 3 Aufgabe 1" --attempt-file versuch.md
 eth-agent check "Prüfung Aug 2025 Aufgabe 2" --image foto1.jpg foto2.jpg --loesung
