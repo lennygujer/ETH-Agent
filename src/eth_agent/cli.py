@@ -270,7 +270,11 @@ def cmd_forget(cfg, args) -> int:
 def cmd_usage(cfg, args) -> int:
     from .llm.usage import UsageLog
 
-    rows = UsageLog(cfg.data_dir / "usage.sqlite").summary(args.hours)
+    log = UsageLog(cfg.data_dir / "usage.sqlite")
+    if args.hours is None:
+        print(log.report(args.days))
+        return 0
+    rows = log.summary(args.hours)
     print(f"Cloud-Aufrufe der letzten {args.hours} h")
     print(f"{'Modell':8s} {'Aufrufe':>7s} {'ok':>4s} {'Limit':>5s} {'Tokens in':>10s} {'Tokens out':>10s} {'USD':>7s}")
     for prov, n, ok, rl, tin, tout, usd in rows:
@@ -335,7 +339,8 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--ref", required=True, help="Teil der Aufgabenangabe, z. B. 'Exam2024fall.pdf, Aufgabe 5'")
 
     s = sub.add_parser("usage", help="Cloud-Aufrufe und Tokens anzeigen")
-    s.add_argument("--hours", type=int, default=5)
+    s.add_argument("--days", type=int, default=7, help="Bericht wie /verbrauch über n Tage (1 = heute)")
+    s.add_argument("--hours", type=int, help="alte Kurzübersicht der letzten n Stunden")
 
     args = p.parse_args(argv)
     cfg = load_config(args.config)

@@ -14,6 +14,7 @@ Ablauf:
 
 from __future__ import annotations
 
+import contextvars
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -319,8 +320,10 @@ def run_check(agent: "Agent", text: str, *, course_id: str | None = None, images
             txt, chk = check_answer(res.text)
             return Solution(name, txt, chk, res)
 
+        # Kontext (laufende Anfrage für das Verbrauchsprotokoll) in die Threads mitnehmen – je Thread eine Kopie
+        ctxs = [contextvars.copy_context() for _ in avail]
         with ThreadPoolExecutor(max_workers=2) as pool:
-            solutions = [s for s in pool.map(solve, avail) if s.llm.ok]
+            solutions = [s for s in pool.map(lambda c, n: c.run(solve, n), ctxs, avail) if s.llm.ok]
         for s in solutions:
             say(f"Referenz {s.provider}: Prüfcode {s.check.badge}")
         if not solutions:

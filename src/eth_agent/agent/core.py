@@ -352,10 +352,19 @@ class Agent:
     def handle(self, message: str, *, course_id: str | None = None, history: list[Turn] | None = None,
                on_status: Callable[[str], None] | None = None, images: list[str] | None = None) -> Answer:
         holder: dict = {}
-        ans = self._handle(message, course_id=course_id, history=history, on_status=on_status, images=images,
-                           holder=holder)
+        m = _COURSE_PREFIX.match(message)
+        start = f"/{m.group(1).lower()}" if m and m.group(1).lower() in SKILLS else "Frage"
+        with self.usage.request(start) as rid:
+            ans = self._handle(message, course_id=course_id, history=history, on_status=on_status, images=images,
+                               holder=holder)
         ans.names = self.names
         ans.course = holder.get("course")
+        try:
+            r = ans.route
+            fallback = (f"/{r.skill}" if r.skill else "Fachwechsel" if r.rule == "FACH" else start)
+            self.usage.finish_request(rid, fallback=fallback, course=ans.course.id if ans.course else None)
+        except Exception:        # Protokoll darf nie eine Antwort verhindern
+            pass
         return ans
 
     def _handle(self, message: str, *, course_id: str | None, history: list[Turn] | None,
@@ -427,6 +436,9 @@ class Agent:
         if r.provider == "skill":
             if r.skill == "help":
                 return Answer(HELP, r)
+            if r.skill in {"verbrauch", "usage", "kosten"}:
+                from ..llm.usage import parse_days
+                return Answer(self.usage.report(parse_days(r.question)), r, prerendered=True)
             if r.skill in {"lernkarte", "mindmap", "karte"}:
                 if not course.id:
                     return Answer("Für die Lernkarte bitte zuerst ein Fach wählen, z. B. `/physik`. Alle Fächer: "
@@ -575,5 +587,7 @@ HELP = """**ETH-Agent – Befehle**
 - **Lernplan:** `/lernplan` erstellt eine priorisierte Liste mit Aufgaben aus deinen Serien, Übungsskripten und
   alten Prüfungen bis zum Termin (P1, P2 …). `/check P3` korrigiert und hakt ab, `P3 Tipp` gibt Tipps,
   `/lernplan neu` plant neu.
+- **Verbrauch:** `/verbrauch` zeigt Cloud-Aufrufe und Tokens der letzten 7 Tage pro Modell, Befehl und Tag
+  (`/verbrauch heute`, `/verbrauch 30`).
 - Geplant: `/practice`.
 """
